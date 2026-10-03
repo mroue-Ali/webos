@@ -99,7 +99,7 @@ def raw_container(
         labels = {
             "com.docker.compose.project": project,
             "com.docker.compose.service": name.split("-")[1] if "-" in name else name,
-            "com.docker.compose.project.working_dir": f"/home/ali/apps/{project}",
+            "com.docker.compose.project.working_dir": f"/srv/apps/{project}",
         }
     return {
         "Id": cid,

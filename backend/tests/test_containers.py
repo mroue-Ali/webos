@@ -135,7 +135,7 @@ def test_import_records_the_loopback_port(authed: Env) -> None:
     with authed.db() as db:
         project = db.scalar(select(Project))
     assert project is not None
-    assert (project.port, project.working_dir) == (8001, "/home/ali/apps/shop")
+    assert (project.port, project.working_dir) == (8001, "/srv/apps/shop")
     duplicate = authed.client.post("/api/projects", json={"compose_project": "shop"})
     assert duplicate.status_code == 409
 

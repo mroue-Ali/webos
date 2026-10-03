@@ -9,7 +9,7 @@ Decisions since the first draft:
   keeps it off the internet with no new software. Tailscale is still an option later.
 - MIT licence. No `mobile/` app: the web UI works on a phone. Backend managed with uv.
 
-webos is a self-hosted panel for one VPS (see the server notes: Docker Compose stacks on
+webos is a self-hosted panel for one VPS (Docker Compose stacks on
 loopback ports behind the host's nginx and certbot). It replaces the manual "add a site"
 routine and puts day-to-day operations in the browser.
 
@@ -38,8 +38,8 @@ routine and puts day-to-day operations in the browser.
 ## 2. Architecture
 
 ```
- laptop ── ssh -p 2222 -L 9000:127.0.0.1:9000 ──┐   (browser: http://localhost:9000)
-                                                ▼
+ laptop ── ssh -L 9000:127.0.0.1:9000 ──┐   (browser: http://localhost:9000)
+                                        ▼
  VPS host       sshd (unchanged, as today)
                     │
                     ▼  127.0.0.1:9000   (loopback only — no nginx block, no public bind)
@@ -53,7 +53,7 @@ routine and puts day-to-day operations in the browser.
  │                denies  create, exec, build, images, volumes, ...  │
  └──────────────────┬───────────────────────────────────────────────┘
                     ▼  /var/run/docker.sock
-                 dockerd ── portfolio, Dressey, … compose stacks
+                 dockerd ── the sites' compose stacks
 
  M2+: webos-agent — host systemd service on /run/webos/agent.sock, fixed verbs only
 ```
@@ -62,7 +62,7 @@ routine and puts day-to-day operations in the browser.
 |---|---|---|
 | 1 Dashboard | Read containers, events, logs, stats, disk usage; start/stop/restart | Filtered Docker socket proxy; read-only host `/proc/1/net/dev` |
 | 2 New site | Write nginx sites, run certbot, compose up/build, deploy keys | Host agent, fixed verb set |
-| 3 Git + files | Read/write inside `/home/ali/apps/<project>` | Path-confined bind mount; git via agent |
+| 3 Git + files | Read/write inside `~/apps/<project>` | Path-confined bind mount; git via agent |
 | 4 Terminal | Interactive shell | Host agent PTY, step-up auth |
 
 Decisions:
@@ -86,12 +86,12 @@ Decisions:
 
 - The container publishes **only `127.0.0.1:9000`**. This is outside the 8000+ range the
   wizard will hand out to projects. Add it to the port registry.
-- **Access is an SSH tunnel:** `ssh -p 2222 -L 9000:127.0.0.1:9000 ali@169.58.241.120`,
+- **Access is an SSH tunnel:** `ssh -L 9000:127.0.0.1:9000 you@your-server`,
   then open `http://localhost:9000`. It reuses the SSH you already have, needs no new
   software, and changes nothing on the server. That origin is the default in
   `WEBOS_ALLOWED_ORIGINS`, and browsers accept `Secure` cookies on localhost.
-- **No nginx server block for the panel.** The wildcard DNS means `webos.mroueali.com`
-  resolves, but nginx has nothing to serve under that name.
+- **No nginx server block for the panel.** Even with wildcard DNS (so `webos.example.com`
+  resolves), nginx has nothing to serve under that name.
 - Docker must be version 28 or later. Older engines let hosts on the same L2 segment reach
   ports published on `127.0.0.1`.
 
@@ -105,7 +105,7 @@ Decisions:
   with an extra lock in front: nginx client certificates, or at least nginx basic auth so
   bots never reach the app's own login code. Also set `WEBOS_FORWARDED_ALLOW_IPS` so the
   login throttle sees real client IPs. Note that the exact-origin check matters here:
-  SameSite cookies treat every `*.mroueali.com` site as same-site.
+  SameSite cookies treat every `*.example.com` site as same-site.
 
 ---
 
@@ -250,7 +250,7 @@ supports little ALTER.
     landmine)
 - **Unmanaged section:** compose projects and containers that aren't registered, each with
   an **Import** button. Import pre-fills slug, compose project and working directory from
-  the `com.docker.compose.*` labels, so portfolio and Dressey come in on day one without
+  the `com.docker.compose.*` labels, so existing sites come in on day one without
   reading any files.
 - **Project page:** containers, with start/stop/restart for each container or for the whole
   project, plus the log viewer.
@@ -331,9 +331,9 @@ build.
    - the socket proxy refuses dangerous calls (§8)
 2. **On the server:**
    - reachable through the SSH tunnel
-   - refused on `169.58.241.120:9000` from outside
-   - `webos.mroueali.com` doesn't serve it
-   - portfolio and Dressey imported
+   - refused on `<server-ip>:9000` from outside
+   - `webos.<your-domain>` doesn't serve it
+   - the existing sites imported
    - a restart from the UI shows up in the audit log
 
 ---
@@ -363,7 +363,7 @@ images and build cache.
 
 You run these; I'll give them one at a time when we get there. Here they are in order:
 
-1. Push this repo to GitHub, then clone it into `/home/ali/apps/webos` on the server.
+1. Push this repo to GitHub, then clone it into `~/apps/webos` on the server.
 2. Create `.env` from `.env.example`: a fresh `WEBOS_SECRET_KEY`, UID/GID 1001.
 3. Create `data/` (owned by ali, so uid 1001).
 4. `docker compose up -d --build`.
@@ -413,7 +413,7 @@ Two decisions are due in milestone 2:
 - **GitHub secrets:** either the wizard shows the four values for you to paste, or it uses a
   fine-grained PAT, scoped per repo, stored in the panel's `.env`.
 
-**3 — Git and files.** Mount `/home/ali/apps` at the same path. Every path goes through
+**3 — Git and files.** Mount `~/apps` at the same path. Every path goes through
 realpath and must stay under the project's `working_dir`; symlinks that escape it are
 rejected. `.env` is masked, and revealing it is an audited action. Writes are atomic with
 size limits. git runs via subprocess with argument lists and `--`. Push credentials are
@@ -422,7 +422,7 @@ decided in milestone 3.
 **4 — Terminal.** xterm.js over WebSocket, with the PTY spawned by the agent. This is
 root-equivalent by nature. Here "never touch SSH" becomes **policy, not mechanism**. It's
 gated by a fresh TOTP, has an idle timeout, allows one session at a time, and records
-start and stop in the audit log. Still to decide: run it as `ali` (passwordless sudo) or a
+start and stop in the audit log. Still to decide: run it as the admin user (who has sudo) or a
 separate user without sudo, which is still root-equivalent if it's in the docker group.
 
 ---
