@@ -31,6 +31,49 @@ STRAY_ID = "c" * 64
 SELF_ID = "d" * 64
 
 
+SYSTEM_DF = {
+    "LayersSize": 5000,
+    "Images": [
+        {"Size": 3000, "SharedSize": 1000, "Containers": 0},
+        {"Size": 2000, "SharedSize": 0, "Containers": 1},
+    ],
+    "Containers": [{"SizeRw": 10}, {"SizeRw": 5}],
+    "Volumes": [{"UsageData": {"Size": 700}}, {"UsageData": {"Size": -1}}],
+    "BuildCache": [{"Size": 400, "InUse": False}, {"Size": 100, "InUse": True}],
+}
+
+CONTAINER_STATS = {
+    "cpu_stats": {"cpu_usage": {"total_usage": 2_000_000}, "system_cpu_usage": 100_000_000},
+    "precpu_stats": {"cpu_usage": {"total_usage": 1_000_000}, "system_cpu_usage": 90_000_000},
+    "memory_stats": {
+        "usage": 300_000_000,
+        "limit": 8_000_000_000,
+        "stats": {"inactive_file": 100_000_000},
+    },
+    "networks": {"eth0": {"rx_bytes": 1234, "tx_bytes": 5678}},
+}
+
+
+def write_proc(proc: Path, *, cpu: str, eth0: tuple[int, int]) -> None:
+    """Fake /proc files with the host values the sampler reads."""
+    proc.mkdir(exist_ok=True)
+    (proc / "stat").write_text(f"cpu  {cpu} 0 0\ncpu0 1 2 3 4 5 6 7 8 0 0\n")
+    (proc / "meminfo").write_text(
+        "MemTotal:        8000000 kB\nMemFree:  1 kB\nMemAvailable:    6000000 kB\n"
+        "SwapTotal:       4000000 kB\nSwapFree:        3000000 kB\n"
+    )
+    (proc / "loadavg").write_text("0.50 0.40 0.30 1/200 123\n")
+    (proc / "uptime").write_text("3600.5 7000.0\n")
+    row = "{:>6}: {} 10 0 0 0 0 0 0 {} 20 0 0 0 0 0 0\n"
+    (proc / "net_dev").write_text(
+        "Inter-|   Receive |  Transmit\n face |bytes packets|bytes packets\n"
+        + row.format("lo", 5, 5)
+        + row.format("eth0", *eth0)
+        + row.format("docker0", 99, 99)
+        + row.format("veth1a2b", 99, 99)
+    )
+
+
 class FakeClock:
     def __init__(self) -> None:
         self.now = 1_800_000_000.0
@@ -114,12 +157,25 @@ class FakeDocker:
         self.calls.append((request.method, path))
         if path == "/version":
             return httpx.Response(200, json={"Version": "28.1.1"})
+        if path == "/info":
+            return httpx.Response(
+                200,
+                json={
+                    "Name": "vps",
+                    "OperatingSystem": "Ubuntu 24.04 LTS",
+                    "KernelVersion": "6.8.0",
+                    "NCPU": 4,
+                    "ServerVersion": "28.1.1",
+                },
+            )
+        if path == "/system/df":
+            return httpx.Response(200, json=SYSTEM_DF)
         if path == "/containers/json":
             return httpx.Response(200, json=self.containers)
         if path == "/events":
             event = {"Action": "start", "Actor": {"ID": APP_ID, "Attributes": {"name": "shop-web"}}}
             return httpx.Response(200, content=json.dumps(event).encode() + b"\n")
-        match = re.fullmatch(r"/containers/([a-f0-9]+)/(json|start|stop|restart|logs)", path)
+        match = re.fullmatch(r"/containers/([a-f0-9]+)/(json|start|stop|restart|logs|stats)", path)
         if match:
             container = self.find(match[1])
             if container is None:
@@ -140,6 +196,8 @@ class FakeDocker:
                 )
             if match[2] == "logs":
                 return httpx.Response(200, content=self.log_bytes)
+            if match[2] == "stats":
+                return httpx.Response(200, json=CONTAINER_STATS)
             return httpx.Response(204)
         return httpx.Response(404, json={"message": "page not found"})
 
@@ -150,6 +208,7 @@ class Env:
     client: TestClient
     docker: FakeDocker
     clock: FakeClock
+    proc: Path
 
     def db(self) -> Session:
         return self.app.state.ctx.sessionmaker()  # type: ignore[no-any-return]
@@ -166,11 +225,17 @@ class Env:
 
 @pytest.fixture
 def env(tmp_path: Path) -> Iterator[Env]:
+    proc = tmp_path / "proc"
+    write_proc(proc, cpu="100 0 100 800 0 0 0 0", eth0=(1000, 2000))
     settings = Settings(
         secret_key=SECRET_KEY,
         database_url=f"sqlite:///{tmp_path / 'webos.db'}",
         allowed_origins=[ORIGIN],
         docker_url="http://docker.test",
+        proc_root=proc,
+        host_net_dev=proc / "net_dev",
+        disk_path=tmp_path,
+        metrics_interval_seconds=3600,  # tests call sampler.sample() themselves
         _env_file=None,  # type: ignore[call-arg]
     )
     migrate.upgrade(settings.database_url)
@@ -191,7 +256,7 @@ def env(tmp_path: Path) -> Iterator[Env]:
         )
         db.commit()
     with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN, "X-WebOS": "1"}) as client:
-        yield Env(app=app, client=client, docker=docker, clock=clock)
+        yield Env(app=app, client=client, docker=docker, clock=clock, proc=proc)
 
 
 @pytest.fixture

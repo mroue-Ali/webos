@@ -37,7 +37,10 @@ def main(argv: list[str] | None = None) -> int:
     create = commands.add_parser("create-user", help="create the panel user (once)")
     create.add_argument("--username", required=True)
     commands.add_parser("reset-password", help="set a new password; ends all sessions")
-    commands.add_parser("reset-totp", help="enrol a new authenticator; ends all sessions")
+    commands.add_parser(
+        "enable-totp", help="turn on 2FA (or replace the authenticator); ends all sessions"
+    )
+    commands.add_parser("disable-totp", help="turn off 2FA; ends all sessions")
     args = parser.parse_args(argv)
 
     settings = Settings()
@@ -52,11 +55,13 @@ def main(argv: list[str] | None = None) -> int:
             secrets = SecretBox(derive_key(settings.secret_key.get_secret_value(), "totp"))
             with sessions() as db:
                 if args.command == "create-user":
-                    create_user(db, secrets, args.username)
+                    create_user(db, args.username)
                 elif args.command == "reset-password":
                     reset_password(db)
+                elif args.command == "enable-totp":
+                    enable_totp(db, secrets)
                 else:
-                    reset_totp(db, secrets)
+                    disable_totp(db)
     except CliError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -81,24 +86,17 @@ def serve_app(settings: Settings, host: str, port: int) -> None:
     )
 
 
-def create_user(db: Session, secrets: SecretBox, username: str) -> None:
+def create_user(db: Session, username: str) -> None:
     if db.scalar(select(User)) is not None:
-        raise CliError("a user already exists; use reset-password or reset-totp")
+        raise CliError("a user already exists; use reset-password instead")
     if not 1 <= len(username) <= 64:
         raise CliError("username must be 1-64 characters")
     password = prompt_password()
-    secret, step = enrol_totp(username)
-    db.add(
-        User(
-            username=username,
-            password_hash=hash_password(password),
-            totp_secret_enc=secrets.seal(secret),
-            totp_last_step=step,
-        )
-    )
+    db.add(User(username=username, password_hash=hash_password(password)))
     db.commit()
     audit.record(db, action="user.create", outcome="ok", actor="cli", target=username)
-    print(f"Created user {username!r}.")
+    print(f"Created user {username!r}. Sign in with username and password.")
+    print("Optional: add a 6-digit code from a phone app with `webos-admin enable-totp`.")
 
 
 def reset_password(db: Session) -> None:
@@ -111,15 +109,28 @@ def reset_password(db: Session) -> None:
     print("Password changed. All sessions have been ended.")
 
 
-def reset_totp(db: Session, secrets: SecretBox) -> None:
+def enable_totp(db: Session, secrets: SecretBox) -> None:
     user = single_user(db)
     secret, step = enrol_totp(user.username)
     user.totp_secret_enc = secrets.seal(secret)
     user.totp_last_step = step
     user.session_version += 1
     db.commit()
-    audit.record(db, action="user.reset_totp", outcome="ok", actor="cli", target=user.username)
-    print("Authenticator replaced. All sessions have been ended.")
+    audit.record(db, action="user.enable_totp", outcome="ok", actor="cli", target=user.username)
+    print("2FA is on: sign-in now also asks for the code from your app. Sessions ended.")
+
+
+def disable_totp(db: Session) -> None:
+    user = single_user(db)
+    if user.totp_secret_enc is None:
+        print("2FA is already off.")
+        return
+    user.totp_secret_enc = None
+    user.totp_last_step = 0
+    user.session_version += 1
+    db.commit()
+    audit.record(db, action="user.disable_totp", outcome="ok", actor="cli", target=user.username)
+    print("2FA is off: sign in with username and password. Sessions ended.")
 
 
 def single_user(db: Session) -> User:

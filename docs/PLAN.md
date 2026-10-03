@@ -60,7 +60,7 @@ routine and puts day-to-day operations in the browser.
 
 | Milestone | New privilege | Comes in through |
 |---|---|---|
-| 1 Dashboard | Read containers, events and logs; start/stop/restart | Filtered Docker socket proxy |
+| 1 Dashboard | Read containers, events, logs, stats, disk usage; start/stop/restart | Filtered Docker socket proxy; read-only host `/proc/1/net/dev` |
 | 2 New site | Write nginx sites, run certbot, compose up/build, deploy keys | Host agent, fixed verb set |
 | 3 Git + files | Read/write inside `/home/ali/apps/<project>` | Path-confined bind mount; git via agent |
 | 4 Terminal | Interactive shell | Host agent PTY, step-up auth |
@@ -113,7 +113,12 @@ Decisions:
 
 - **Single user, created from the CLI inside the container**
   (`webos-admin create-user`). There's no signup route and no "first visitor becomes
-  admin" race. The CLI prints the TOTP QR code in the terminal.
+  admin" race.
+- **2FA is optional, off by default** (changed 2026-10-03, while testing). Sign-in is
+  username + password. `webos-admin enable-totp` adds a code from a phone app: the login
+  form asks for it only after the right password. Behind the SSH tunnel, password-only is
+  reasonable, since reaching the panel already needs SSH access to the server. **Turn 2FA
+  on before exposing the panel any other way** (Tailscale or a public address).
 - **Passwords** use argon2id (argon2-cffi). **TOTP** uses RFC 6238 via pyotp with a ±1
   step window. The last used step is stored so a code can't be replayed.
 - **Login is one request** with username, password and code. It returns a generic error.
@@ -132,7 +137,7 @@ Decisions:
 - **The TOTP secret is encrypted at rest** (Fernet). The key is derived from
   `WEBOS_SECRET_KEY` in the panel's own `.env`, so a leaked SQLite backup alone is not
   enough.
-- **Recovery** is `docker compose exec webos webos-admin reset-totp` over SSH. SSH is the
+- **Recovery** is `webos-admin reset-password` / `disable-totp` over SSH. SSH is the
   recovery path, so there are no recovery codes.
 - **Long-lived streams end with the session.** Log and event streams re-check the
   session every 30 seconds. They close at the idle or absolute deadline, or as soon as
@@ -332,6 +337,27 @@ build.
    - a restart from the UI shows up in the audit log
 
 ---
+
+## 10b. Server stats (added 2026-10-03, before the first deploy)
+
+The Server page shows host CPU %, load, memory and swap, disk, network rates, Docker's
+disk usage and each running container's CPU, memory and traffic.
+
+- **CPU, memory, load and uptime come from `/proc` inside the container.** That already
+  reports the host kernel, so no mount is needed.
+- **Disk is the filesystem holding `./data`.** On the VPS that's the root disk.
+- **Network needs the host's counters.** Network counters are per namespace, so compose
+  mounts the host's `/proc/1/net/dev` read-only. It holds byte counters and nothing else.
+  Loopback, `docker0`, `br-*` and `veth*` are skipped, so traffic isn't counted twice.
+- **The proxy gained two read-only permissions.** Container `stats` (already covered by
+  `CONTAINERS`) and `SYSTEM=1` for `GET /system/df`. Writes stay blocked by `POST=0`.
+- **Caching.** A sampler reads the host every 5 s and keeps 30 minutes of history *in
+  memory* (never in the database; a restart starts it afresh). Container stats are fetched
+  on demand at most every 10 s, and `system df` (slow) at most every 60 s, so nothing
+  loads Docker while nobody is looking.
+
+Later (milestone 2, through the host agent): cleanup actions such as pruning unused
+images and build cache.
 
 ## 11. Server setup for milestone 1
 

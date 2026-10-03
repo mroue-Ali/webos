@@ -1,10 +1,11 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { useRef, useState } from 'react'
 import { Link } from 'react-router'
-import { keys, useImportProject, useOverview } from '../api/queries'
-import type { Container, UnmanagedGroup } from '../api/types'
+import { keys, useImportProject, useOverview, useServer } from '../api/queries'
+import type { Container, ContainerUsage, UnmanagedGroup } from '../api/types'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { ContainerTable } from '../components/ContainerTable'
+import { formatBytes, formatPercent } from '../lib/format'
 import { useContainerActions } from '../lib/useContainerActions'
 import { useEventSource } from '../lib/useEventSource'
 
@@ -27,8 +28,12 @@ function countWarnings(containers: Container[]) {
 
 export function DashboardPage() {
   const overview = useOverview()
+  const server = useServer()
   const live = useLiveOverview()
   const actions = useContainerActions()
+  const usage = new Map<string, ContainerUsage>(
+    (server.data?.containers ?? []).map((u) => [u.id, u]),
+  )
 
   if (overview.isPending) return <p className="muted">Loading…</p>
   if (overview.isError) return <p className="error-text">{overview.error.message}</p>
@@ -54,6 +59,7 @@ export function DashboardPage() {
           <span className="stat-value">{warnings}</span>
           <span className="stat-label">warnings</span>
         </div>
+        <ServerStats />
         <div className="spacer" />
         <span className="muted small">
           Docker {docker.version} · events {live === 'live' ? 'live' : live}
@@ -90,7 +96,7 @@ export function DashboardPage() {
                 Open
               </Link>
             </div>
-            <ContainerTable containers={p.containers} onAction={actions.container} />
+            <ContainerTable containers={p.containers} onAction={actions.container} usage={usage} />
           </div>
         ))}
       </section>
@@ -102,7 +108,7 @@ export function DashboardPage() {
             Running on the server but unknown to webos. These are view-only until imported.
           </p>
           {unmanaged.map((g) => (
-            <UnmanagedCard key={g.compose_project ?? '(none)'} group={g} />
+            <UnmanagedCard key={g.compose_project ?? '(none)'} group={g} usage={usage} />
           ))}
         </section>
       )}
@@ -112,7 +118,38 @@ export function DashboardPage() {
   )
 }
 
-function UnmanagedCard({ group }: { group: UnmanagedGroup }) {
+/** CPU, memory and disk at a glance; the Server page has the detail. */
+function ServerStats() {
+  const server = useServer()
+  if (!server.data) return null
+  const { cpu, memory, disk } = server.data
+  // [key, value, label]
+  const tiles: [string, string, string][] = [
+    ['cpu', formatPercent(cpu.percent), cpu.load ? `CPU · load ${cpu.load[0].toFixed(2)}` : 'CPU'],
+    [
+      'memory',
+      memory ? formatPercent((memory.used / memory.total) * 100) : '—',
+      memory ? `memory · ${formatBytes(memory.used)} of ${formatBytes(memory.total)}` : 'memory',
+    ],
+    [
+      'disk',
+      disk ? formatPercent((disk.used / disk.total) * 100) : '—',
+      disk ? `disk · ${formatBytes(disk.free)} free` : 'disk',
+    ],
+  ]
+  return (
+    <>
+      {tiles.map(([key, value, label]) => (
+        <Link key={key} to="/server" className="stat stat-link" title="Open the Server page">
+          <span className="stat-value">{value}</span>
+          <span className="stat-label">{label}</span>
+        </Link>
+      ))}
+    </>
+  )
+}
+
+function UnmanagedCard({ group, usage }: { group: UnmanagedGroup; usage: Map<string, ContainerUsage> }) {
   const importProject = useImportProject()
   const [error, setError] = useState<string | null>(null)
   const name = group.compose_project
@@ -146,7 +183,7 @@ function UnmanagedCard({ group }: { group: UnmanagedGroup }) {
           Started without Docker Compose, so there is no project to import.
         </p>
       )}
-      <ContainerTable containers={group.containers} />
+      <ContainerTable containers={group.containers} usage={usage} />
     </div>
   )
 }

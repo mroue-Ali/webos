@@ -9,7 +9,7 @@ from webos import audit
 from webos.context import get_context
 from webos.db import get_db
 from webos.models import User
-from webos.schemas import LoginIn, MeOut
+from webos.schemas import LoginIn, LoginOut, MeOut
 from webos.security import totp
 from webos.security.auth import clear_session, issue_session, require_user
 from webos.security.passwords import hash_password, needs_rehash, verify_password
@@ -17,13 +17,15 @@ from webos.security.passwords import hash_password, needs_rehash, verify_passwor
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
-INVALID_LOGIN = "Invalid username, password or code"
+INVALID_LOGIN = "Invalid username or password"
+INVALID_CODE = "Invalid code"
 
 
 @router.post("/login")
 def login(
     body: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)
-) -> MeOut:
+) -> LoginOut:
+    """Username + password. If the user has turned on 2FA, a second request adds the code."""
     ctx = get_context(request)
     ip = audit.client_ip(request)
 
@@ -37,25 +39,34 @@ def login(
             headers={"Retry-After": str(math.ceil(wait))},
         )
 
-    user = db.scalar(select(User).where(User.username == body.username))
-    password_ok = verify_password(user.password_hash if user else None, body.password)
-    step = None
-    if user is not None and password_ok:
-        secret = ctx.secrets.open(user.totp_secret_enc)
-        step = totp.verify(secret, body.code, last_step=user.totp_last_step, now=ctx.clock())
-
-    if user is None or step is None:
+    def fail(reason: str, message: str) -> HTTPException:
         ctx.throttle.record_failure(ip)
-        # The audit log says which factor failed: "bad_code" means someone knows your
-        # password. The response stays generic.
-        reason = "unknown_user" if user is None else "bad_code" if password_ok else "bad_password"
         audit.record_request(
             db, request, action="auth.login", outcome="error", actor=body.username, error=reason
         )
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, INVALID_LOGIN)
+        return HTTPException(status.HTTP_401_UNAUTHORIZED, message)
+
+    user = db.scalar(select(User).where(User.username == body.username))
+    password_ok = verify_password(user.password_hash if user else None, body.password)
+    if user is None or not password_ok:
+        raise fail("unknown_user" if user is None else "bad_password", INVALID_LOGIN)
+
+    if user.totp_secret_enc is not None:
+        if not body.code:
+            # Right password, 2FA on: ask for the code. Not a failed attempt, but recorded,
+            # so a stranger who has the password shows up in the audit log.
+            audit.record_request(
+                db, request, action="auth.login", outcome="started", actor=body.username
+            )
+            return LoginOut(code_required=True)
+        secret = ctx.secrets.open(user.totp_secret_enc)
+        step = totp.verify(secret, body.code, last_step=user.totp_last_step, now=ctx.clock())
+        if step is None:
+            # "bad_code" in the audit log means someone knows your password.
+            raise fail("bad_code", INVALID_CODE)
+        user.totp_last_step = step
 
     ctx.throttle.record_success(ip)
-    user.totp_last_step = step
     if needs_rehash(user.password_hash):
         user.password_hash = hash_password(body.password)
     db.commit()
@@ -63,7 +74,7 @@ def login(
     issue_session(response, ctx, user)
     request.state.user = user
     audit.record_request(db, request, action="auth.login", outcome="ok")
-    return MeOut(username=user.username)
+    return LoginOut(username=user.username)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

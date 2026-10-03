@@ -18,8 +18,12 @@ services:
     security_opt: ["no-new-privileges:true"]
     # Loopback only. Never 0.0.0.0: Docker's own iptables rules bypass ufw.
     ports: ["127.0.0.1:${WEBOS_PORT:-9000}:8000"]
-    # SQLite lives here. No Docker socket and no other host path is mounted.
-    volumes: ["./data:/data"]
+    volumes:
+      # SQLite lives here. No Docker socket is mounted.
+      - ./data:/data
+      # Read-only host network byte counters, for the Server page. (CPU, memory and load
+      # need no mount: /proc inside a container already shows the host's.)
+      - /proc/1/net/dev:/host/net_dev:ro
     networks: [default, docker-api]
     depends_on: [socket-proxy]
 
@@ -30,13 +34,14 @@ services:
     image: lscr.io/linuxserver/socket-proxy:3.4.6-r0-ls100@sha256:0357c479cc98e863917d1cd8b10e83d35a50ca46a0788f5a192bf792c3b7100d
     restart: unless-stopped
     environment:
-      CONTAINERS: 1      # list + inspect
+      CONTAINERS: 1      # list, inspect, stats
       ALLOW_LOGS: 1
       ALLOW_START: 1
       ALLOW_STOP: 1
       ALLOW_RESTARTS: 1  # restart, stop, kill
       EVENTS: 1
       INFO: 1
+      SYSTEM: 1          # GET /system/df (disk usage); its writes are covered by POST: 0
       PING: 1
       VERSION: 1
       POST: 0            # every other write is refused

@@ -23,7 +23,8 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(64), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
-    totp_secret_enc: Mapped[str] = mapped_column(String(255))
+    # None until 2FA is turned on with `webos-admin enable-totp`.
+    totp_secret_enc: Mapped[str | None] = mapped_column(String(255))
     # Last accepted TOTP time step; codes at or before it are rejected as replays.
     totp_last_step: Mapped[int] = mapped_column(default=0)
     # Embedded in every session cookie; bumping it ends all sessions.

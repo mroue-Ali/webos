@@ -1,7 +1,7 @@
 from sqlalchemy import select
 
-from tests.conftest import Env
-from webos.models import AuditEvent
+from tests.conftest import PASSWORD, USERNAME, Env
+from webos.models import AuditEvent, User
 
 
 def audit_errors(env: Env) -> list[str | None]:
@@ -13,7 +13,7 @@ def audit_errors(env: Env) -> list[str | None]:
 def test_login_sets_hardened_cookie(env: Env) -> None:
     response = env.login()
     assert response.status_code == 200
-    assert response.json() == {"username": "ali"}
+    assert response.json() == {"username": "ali", "code_required": False}
     cookie = response.headers["set-cookie"]
     assert cookie.startswith("__Host-webos=")
     for flag in ("HttpOnly", "Secure", "SameSite=strict", "Path=/"):
@@ -34,8 +34,46 @@ def test_failures_are_generic_but_audited_by_factor(env: Env) -> None:
         "/api/auth/login", json={"username": "eve", "password": "x", "code": "123456"}
     )
     assert bad_password.status_code == bad_code.status_code == unknown.status_code == 401
-    assert bad_password.json() == bad_code.json() == unknown.json()
+    # Unknown user and wrong password look the same; "Invalid code" needs the right password.
+    assert bad_password.json() == unknown.json() == {"detail": "Invalid username or password"}
+    assert bad_code.json() == {"detail": "Invalid code"}
     assert audit_errors(env) == ["bad_password", "bad_code", "unknown_user"]
+
+
+def turn_off_2fa(env: Env) -> None:
+    with env.db() as db:
+        user = db.scalar(select(User))
+        assert user is not None
+        user.totp_secret_enc = None
+        db.commit()
+
+
+def password_only(env: Env, password: str = PASSWORD) -> dict[str, object]:
+    response = env.client.post("/api/auth/login", json={"username": USERNAME, "password": password})
+    return {
+        "status": response.status_code,
+        "body": response.json(),
+        "cookie": response.headers.get("set-cookie"),
+    }
+
+
+def test_password_only_login_when_2fa_is_off(env: Env) -> None:
+    turn_off_2fa(env)
+    result = password_only(env)
+    assert result["status"] == 200
+    assert result["body"] == {"username": "ali", "code_required": False}
+    assert env.client.get("/api/auth/me").json() == {"username": "ali"}
+
+
+def test_2fa_asks_for_the_code_only_after_the_right_password(env: Env) -> None:
+    assert password_only(env, "wrong")["status"] == 401
+    for _ in range(6):  # not a failed attempt, so it never trips the throttle
+        result = password_only(env)
+        assert result["status"] == 200
+        assert result["body"] == {"username": None, "code_required": True}
+        assert result["cookie"] is None
+    assert env.client.get("/api/auth/me").status_code == 401
+    assert env.login().status_code == 200
 
 
 def test_code_cannot_be_replayed(env: Env) -> None:

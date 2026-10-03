@@ -10,6 +10,9 @@ the browser, with every change written to an audit log.
 
 ## What it does today
 
+- **Server page:** CPU, memory, swap, load, disk, and network in/out with 30-minute
+  trend lines; how much disk Docker's images, volumes and build cache take; each running
+  container's CPU, memory and traffic.
 - **Dashboard:** every compose project and container on the host, with state, health,
   restarts, exit codes and published ports. Updates live from Docker events.
 - **Warnings:** crash loops, failing health checks, OOM kills, and **ports published on
@@ -30,15 +33,17 @@ root on the server. The design follows from that:
 - **Not on the internet by default.** The panel listens only on `127.0.0.1:9000`. Reach it
   through an SSH tunnel (or a private network such as Tailscale). There is no nginx site
   for it.
-- **Password + TOTP**, argon2id hashing, login throttling, and a TOTP code can't be used
-  twice. The single user is created from the command line, so there's no signup page.
+- **Password login** with argon2id hashing and login throttling, plus **optional 2FA** (a
+  6-digit code from an authenticator app; turn it on with `webos-admin enable-totp`). The
+  single user is created from the command line, so there's no signup page.
 - **No raw Docker socket.** The panel talks to Docker only through a
   [filtering proxy](https://github.com/linuxserver/docker-socket-proxy) that allows
-  list/inspect/logs/events and start/stop/restart. Creating containers, exec, builds,
+  list/inspect/logs/stats/events, disk usage, and start/stop/restart. Creating containers, exec, builds,
   images, volumes and reading container filesystems are all refused, so a bug in webos
   can't become a root shell through Docker.
 - **Hardened container:** runs as a non-root uid, read-only root filesystem, every Linux
-  capability dropped, `no-new-privileges`.
+  capability dropped, `no-new-privileges`. The only host paths it sees are its own data
+  folder and, read-only, the host's network byte counters (`/proc/1/net/dev`).
 - **Request protections:** exact-origin checks on every state-changing request (not just
   SameSite cookies), a strict CSP, and log lines always rendered as text, because anyone
   can write into a public site's logs.
@@ -61,7 +66,7 @@ docker compose up -d --build
 docker compose exec webos webos-admin create-user --username you
 ```
 
-`create-user` asks for a password and shows a QR code for your authenticator app.
+`create-user` asks for a password. Sign in with username and password.
 
 Then, from your own machine:
 
@@ -75,7 +80,8 @@ and open <http://localhost:9000>.
 |---|---|
 | `webos-admin create-user --username NAME` | Create the one user (only works once) |
 | `webos-admin reset-password` | New password; ends every session |
-| `webos-admin reset-totp` | New authenticator; ends every session |
+| `webos-admin enable-totp` | Optional 2FA: also ask for a 6-digit code from a phone app (scan the QR it prints) |
+| `webos-admin disable-totp` | Back to username + password only |
 | `webos-admin migrate` | Apply database migrations (`serve` does this too) |
 
 **Back up `data/webos.db`.** It holds projects and the audit log. Live state is always
@@ -87,7 +93,7 @@ All settings are environment variables, set in `.env` (see [.env.example](.env.e
 
 | Variable | Default | |
 |---|---|---|
-| `WEBOS_SECRET_KEY` | — (required) | Signs sessions, encrypts the TOTP secret. 32+ characters. |
+| `WEBOS_SECRET_KEY` | — (required) | Signs sessions, encrypts the 2FA secret. 32+ characters. |
 | `WEBOS_ALLOWED_ORIGINS` | `http://localhost:9000` | Exact origin(s) you open the panel at, comma-separated. |
 | `WEBOS_UID` / `WEBOS_GID` | `1001` | Host user the container runs as. |
 | `WEBOS_PORT` | `9000` | Loopback port. |

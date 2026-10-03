@@ -21,7 +21,14 @@ REPO_URL = r"^(https://|git@)[A-Za-z0-9._@:/~-]+$"
 class LoginIn(BaseModel):
     username: str = Field(min_length=1, max_length=64)
     password: str = Field(min_length=1, max_length=1024)
-    code: str = Field(min_length=6, max_length=12)
+    code: str | None = Field(default=None, max_length=12)  # only when 2FA is on
+
+
+class LoginOut(BaseModel):
+    """Either signed in (username), or the password was right and a 2FA code is needed."""
+
+    username: str | None = None
+    code_required: bool = False
 
 
 class MeOut(BaseModel):
@@ -132,3 +139,81 @@ class AuditEventOut(BaseModel):
 class AuditPageOut(BaseModel):
     items: list[AuditEventOut]
     next_before: int | None
+
+
+class HostInfoOut(BaseModel):
+    hostname: str | None
+    os: str | None
+    kernel: str | None
+    cpus: int | None
+    docker_version: str | None
+    uptime_seconds: float | None
+
+
+class CpuOut(BaseModel):
+    percent: float | None  # None until two samples exist
+    load: list[float] | None  # 1, 5, 15 minutes
+
+
+class MemoryOut(BaseModel):
+    total: int
+    used: int
+    available: int
+    swap_total: int | None
+    swap_used: int | None
+
+
+class DiskOut(BaseModel):
+    total: int
+    used: int
+    free: int
+
+
+class DockerDiskOut(BaseModel):
+    images: int
+    images_reclaimable: int
+    containers: int
+    volumes: int
+    build_cache: int
+    build_cache_reclaimable: int
+
+
+class InterfaceOut(BaseModel):
+    name: str
+    rx_bytes: int
+    tx_bytes: int
+    rx_rate: float | None  # bytes per second
+    tx_rate: float | None
+
+
+class HistoryOut(BaseModel):
+    """Recent samples, oldest first. Kept in memory only; restarts start it afresh."""
+
+    interval_seconds: float
+    ts: list[float]
+    cpu: list[float | None]
+    memory: list[float | None]  # percent used
+    rx: list[float | None]  # bytes per second, all interfaces
+    tx: list[float | None]
+
+
+class ContainerUsageOut(BaseModel):
+    id: str
+    name: str
+    project: str | None
+    cpu_percent: float  # share of the whole machine
+    memory_used: int
+    memory_limit: int
+    net_rx: int
+    net_tx: int
+
+
+class ServerOut(BaseModel):
+    host: HostInfoOut
+    cpu: CpuOut
+    memory: MemoryOut | None
+    disk: DiskOut | None
+    docker_disk: DockerDiskOut | None
+    network: list[InterfaceOut] | None  # None when the host counters aren't mounted
+    history: HistoryOut
+    containers: list[ContainerUsageOut]

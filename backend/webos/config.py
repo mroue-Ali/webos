@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="WEBOS_", env_file=".env", extra="ignore")
 
     # Signs session cookies and encrypts the TOTP secret. Changing it logs everyone out
-    # and makes the stored TOTP secret unreadable (run `webos-admin reset-totp`).
+    # and makes the stored TOTP secret unreadable (run `webos-admin enable-totp` again).
     secret_key: SecretStr = Field(min_length=32)
 
     database_url: str = "sqlite:///./data/webos.db"
@@ -31,6 +31,14 @@ class Settings(BaseSettings):
 
     # Proxies whose X-Forwarded-For uvicorn trusts (comma-separated IPs, or "*").
     forwarded_allow_ips: str = "127.0.0.1"
+
+    # Server stats. /proc in a container already shows the host's CPU, memory and load;
+    # network counters need the host's /proc/1/net/dev mounted read-only (compose does it).
+    proc_root: Path = Path("/proc")
+    host_net_dev: Path | None = Path("/host/net_dev")
+    # Disk usage is reported for the filesystem holding this path (the data bind mount).
+    disk_path: Path = Path("/data")
+    metrics_interval_seconds: float = Field(default=5.0, gt=0)
 
     static_dir: Path | None = None
     debug: bool = False

@@ -6,6 +6,7 @@ import { AuditPage } from './pages/AuditPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { LoginPage } from './pages/LoginPage'
 import { ProjectPage } from './pages/ProjectPage'
+import { ServerPage } from './pages/ServerPage'
 
 export default function App() {
   const me = useMe()
@@ -29,6 +30,7 @@ export default function App() {
     <Layout username={me.data.username}>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
+        <Route path="/server" element={<ServerPage />} />
         <Route path="/projects/:slug" element={<ProjectPage />} />
         <Route path="/audit" element={<AuditPage />} />
         <Route

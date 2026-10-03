@@ -24,6 +24,8 @@ keep it clean and documented. The design, threat model and milestones are in
 - The panel must never touch sshd config, `ssh.socket`/`ssh.service`, or ufw.
 - Every Docker endpoint lives in `backend/webos/docker_api.py`, and the socket proxy env
   in `docker-compose.yml` must allow exactly those. Never widen the proxy casually.
+- Server stats (`webos/metrics.py`) read the host via `/proc` and a read-only
+  `/proc/1/net/dev` mount. History is in memory only, never in the database.
 - Every state change is audited (`webos.audit.record_request` / `audited`). Disruptive
   actions require `confirm` = the target's name, checked on the server.
 - The database stores only the user, projects, deployments and the audit log. Live state

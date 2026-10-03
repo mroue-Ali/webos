@@ -4,6 +4,12 @@ export interface Me {
   username: string
 }
 
+/** Signed in, or (with 2FA on) the password was right and the code is needed next. */
+export interface LoginResult {
+  username: string | null
+  code_required: boolean
+}
+
 export interface Port {
   ip: string
   private_port: number
@@ -82,4 +88,61 @@ export interface LogLine {
   ts: string
   stream: 'stdout' | 'stderr'
   text: string
+}
+
+export interface ContainerUsage {
+  id: string
+  name: string
+  project: string | null
+  cpu_percent: number // share of the whole machine
+  memory_used: number
+  memory_limit: number
+  net_rx: number
+  net_tx: number
+}
+
+export interface NetworkInterface {
+  name: string
+  rx_bytes: number
+  tx_bytes: number
+  rx_rate: number | null
+  tx_rate: number | null
+}
+
+export interface ServerStats {
+  host: {
+    hostname: string | null
+    os: string | null
+    kernel: string | null
+    cpus: number | null
+    docker_version: string | null
+    uptime_seconds: number | null
+  }
+  cpu: { percent: number | null; load: number[] | null }
+  memory: {
+    total: number
+    used: number
+    available: number
+    swap_total: number | null
+    swap_used: number | null
+  } | null
+  disk: { total: number; used: number; free: number } | null
+  docker_disk: {
+    images: number
+    images_reclaimable: number
+    containers: number
+    volumes: number
+    build_cache: number
+    build_cache_reclaimable: number
+  } | null
+  network: NetworkInterface[] | null
+  history: {
+    interval_seconds: number
+    ts: number[]
+    cpu: (number | null)[]
+    memory: (number | null)[]
+    rx: (number | null)[]
+    tx: (number | null)[]
+  }
+  containers: ContainerUsage[]
 }

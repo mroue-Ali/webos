@@ -1,8 +1,8 @@
 """A thin async client for the Docker Engine API.
 
 Every endpoint webos calls is in this file, and it is the same list the socket proxy in
-docker-compose.yml allows: list/inspect/logs, start/stop/restart, events, version, info.
-Nothing here can create, exec into, or build a container.
+docker-compose.yml allows: list/inspect/logs/stats, start/stop/restart, events, version,
+info and system df. Nothing here can create, exec into, or build a container.
 """
 
 import json
@@ -105,6 +105,22 @@ class DockerClient:
 
     async def version(self) -> dict[str, Any]:
         return dict((await self._request("GET", "/version")).json())
+
+    async def info(self) -> dict[str, Any]:
+        return dict((await self._request("GET", "/info")).json())
+
+    async def system_df(self) -> dict[str, Any]:
+        """Disk used by images, containers, volumes and build cache (`docker system df`)."""
+        response = await self._request("GET", "/system/df", timeout=httpx.Timeout(60.0))
+        return dict(response.json())
+
+    async def stats(self, container_id: str) -> dict[str, Any]:
+        """One stats reading. Docker samples twice about a second apart, so CPU % works."""
+        check_container_id(container_id)
+        response = await self._request(
+            "GET", f"/containers/{container_id}/stats", params={"stream": "false"}
+        )
+        return dict(response.json())
 
     async def list_containers(self) -> list[Container]:
         response = await self._request("GET", "/containers/json", params={"all": "1"})

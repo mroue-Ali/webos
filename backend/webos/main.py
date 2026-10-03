@@ -1,3 +1,5 @@
+import asyncio
+import contextlib
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -16,7 +18,8 @@ from webos.config import Settings
 from webos.context import AppContext
 from webos.db import make_engine
 from webos.docker_api import DockerClient, DockerError
-from webos.routers import audit_log, auth, containers, overview, projects
+from webos.metrics import HostSampler, ServerMetrics
+from webos.routers import audit_log, auth, containers, overview, projects, server
 from webos.security.keys import derive_key
 from webos.security.middleware import (
     OriginGuardMiddleware,
@@ -62,12 +65,27 @@ def create_app(
         ),
         secrets=SecretBox(derive_key(secret, "totp")),
         throttle=LoginThrottle(),
+        metrics=ServerMetrics(
+            docker,
+            HostSampler(
+                proc_root=settings.proc_root,
+                net_dev=settings.host_net_dev,
+                disk_path=settings.disk_path,
+                interval=settings.metrics_interval_seconds,
+                clock=clock,
+            ),
+        ),
         clock=clock,
     )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        ctx.metrics.sampler.sample()  # a baseline, so the first CPU % needs one interval
+        sampler = asyncio.create_task(ctx.metrics.sampler.run())
         yield
+        sampler.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sampler
         await docker.aclose()
         engine.dispose()
 
@@ -91,7 +109,7 @@ def create_app(
     async def healthz() -> dict[str, bool]:
         return {"ok": True}
 
-    for module in (auth, overview, projects, containers, audit_log):
+    for module in (auth, overview, server, projects, containers, audit_log):
         app.include_router(module.router)
 
     static_dir = settings.static_dir

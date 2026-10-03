@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { useOverview, useUnregisterProject, useUpdateProject } from '../api/queries'
+import { useOverview, useServer, useUnregisterProject, useUpdateProject } from '../api/queries'
 import type { Project } from '../api/types'
 import { ConfirmDialog, type ConfirmRequest } from '../components/ConfirmDialog'
 import { ContainerTable } from '../components/ContainerTable'
@@ -10,8 +10,10 @@ import { useContainerActions } from '../lib/useContainerActions'
 export function ProjectPage() {
   const { slug } = useParams()
   const overview = useOverview()
+  const server = useServer()
   const actions = useContainerActions()
   const [selected, setSelected] = useState<string | null>(null)
+  const usage = new Map((server.data?.containers ?? []).map((u) => [u.id, u]))
 
   if (overview.isPending) return <p className="muted">Loading…</p>
   if (overview.isError) return <p className="error-text">{overview.error.message}</p>
@@ -93,6 +95,7 @@ export function ProjectPage() {
           onAction={actions.container}
           onLogs={(c) => setSelected(c.id)}
           selectedId={logContainer?.id}
+          usage={usage}
         />
       </div>
 

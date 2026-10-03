@@ -1,4 +1,5 @@
-import type { Action, Container, Port } from '../api/types'
+import type { Action, Container, ContainerUsage, Port } from '../api/types'
+import { formatBytes, formatPercent } from '../lib/format'
 import { StateBadge, WarningBadges } from './Badges'
 
 /** One entry per published port; Docker lists IPv4 and IPv6 bindings separately. */
@@ -24,24 +25,29 @@ export function ContainerTable({
   onAction,
   onLogs,
   selectedId,
+  usage,
 }: {
   containers: Container[]
   onAction?: (container: Container, action: Action) => void
   onLogs?: (container: Container) => void
   selectedId?: string
+  /** Live CPU/memory by container id; adds those columns when given. */
+  usage?: Map<string, ContainerUsage>
 }) {
   if (containers.length === 0) {
     return <p className="muted pad">No containers.</p>
   }
   return (
     <div className="table-wrap">
-      <table className="table containers">
+      <table className={`table containers${usage ? ' with-usage' : ''}`}>
         <thead>
           <tr>
             <th>Container</th>
             <th>State</th>
             <th>Status</th>
             <th>Ports</th>
+            {usage && <th className="num">CPU</th>}
+            {usage && <th className="num">Memory</th>}
             <th className="num">Restarts</th>
             <th />
           </tr>
@@ -67,6 +73,8 @@ export function ContainerTable({
                   </div>
                 ))}
               </td>
+              {usage && <td className="num">{formatPercent(usage.get(c.id)?.cpu_percent)}</td>}
+              {usage && <td className="num">{formatBytes(usage.get(c.id)?.memory_used)}</td>}
               <td className="num">{c.restart_count}</td>
               <td>
                 <div className="row-actions">

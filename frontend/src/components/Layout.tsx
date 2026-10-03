@@ -17,6 +17,7 @@ export function Layout({ username, children }: { username: string; children: Rea
           <NavLink to="/" end>
             Dashboard
           </NavLink>
+          <NavLink to="/server">Server</NavLink>
           <NavLink to="/audit">Audit log</NavLink>
         </nav>
         <div className="spacer" />

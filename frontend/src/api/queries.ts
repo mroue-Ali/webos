@@ -5,7 +5,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import { api } from './client'
-import type { Action, AuditPage, Me, Overview } from './types'
+import type { Action, AuditPage, LoginResult, Me, Overview, ServerStats } from './types'
 
 export const keys = {
   me: ['me'] as const,
@@ -32,6 +32,15 @@ export function useOverview() {
   })
 }
 
+/** Host resources and per-container usage, refreshed every 5 s while the tab is visible. */
+export function useServer() {
+  return useQuery({
+    queryKey: ['server'],
+    queryFn: () => api<ServerStats>('/api/server'),
+    refetchInterval: 5_000,
+  })
+}
+
 export function useAudit(action: string, target: string) {
   return useInfiniteQuery({
     queryKey: keys.audit(action, target),
@@ -50,9 +59,11 @@ export function useAudit(action: string, target: string) {
 export function useLogin() {
   const client = useQueryClient()
   return useMutation({
-    mutationFn: (body: { username: string; password: string; code: string }) =>
-      api<Me>('/api/auth/login', { method: 'POST', body }),
-    onSuccess: (me) => client.setQueryData(keys.me, me),
+    mutationFn: (body: { username: string; password: string; code?: string }) =>
+      api<LoginResult>('/api/auth/login', { method: 'POST', body }),
+    onSuccess: (result) => {
+      if (result.username) client.setQueryData<Me>(keys.me, { username: result.username })
+    },
   })
 }
 

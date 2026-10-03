@@ -7,6 +7,7 @@ from starlette.requests import HTTPConnection
 
 from webos.config import Settings
 from webos.docker_api import DockerClient
+from webos.metrics import ServerMetrics
 from webos.security.sessions import SessionCodec
 from webos.security.throttle import LoginThrottle
 from webos.security.totp import SecretBox
@@ -22,6 +23,7 @@ class AppContext:
     sessions: SessionCodec
     secrets: SecretBox
     throttle: LoginThrottle
+    metrics: ServerMetrics
     clock: Callable[[], float]
 
     @property
