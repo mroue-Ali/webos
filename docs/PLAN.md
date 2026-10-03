@@ -95,7 +95,15 @@ Decisions:
 - Docker must be version 28 or later. Older engines let hosts on the same L2 segment reach
   ports published on `127.0.0.1`.
 
-**Later options, if the tunnel becomes a chore (especially from a phone):**
+**Decision (2026-10-03): the panel is served publicly on a subdomain**, behind host nginx
+and certbot like the other sites, using `deploy/nginx-site.conf`. On top of the app's own
+protections, that file rate-limits `/api/auth/login` and overwrites `X-Forwarded-For`, and
+webos trusts that header only from Docker's bridge range (`WEBOS_FORWARDED_ALLOW_IPS`).
+That way the throttle and the audit log see real client IPs, and a stranger can't lock the
+owner out. Turning on 2FA is strongly recommended. The SSH tunnel keeps working as a
+fallback, because `http://localhost:9000` stays in the allowed origins.
+
+**Other options considered:**
 
 - **Tailscale.** `tailscale serve` gives a private HTTPS address that only your devices
   can reach. Join with a plain `tailscale up` (never `--ssh`), never enable Funnel, and

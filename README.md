@@ -84,6 +84,23 @@ and open <http://localhost:9000>.
 | `webos-admin disable-totp` | Back to username + password only |
 | `webos-admin migrate` | Apply database migrations (`serve` does this too) |
 
+### Public address (optional)
+
+To open it at `https://webos.your-domain` instead of through a tunnel, put it behind the
+host's nginx with [deploy/nginx-site.conf](deploy/nginx-site.conf). That file also
+rate-limits the login. In `.env`, add the address to `WEBOS_ALLOWED_ORIGINS` and set
+`WEBOS_FORWARDED_ALLOW_IPS=172.16.0.0/12`, then run `docker compose up -d`. Then:
+
+```bash
+sed 's/webos.example.com/webos.your-domain/' deploy/nginx-site.conf | sudo tee /etc/nginx/sites-available/webos.your-domain
+sudo ln -s /etc/nginx/sites-available/webos.your-domain /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d webos.your-domain
+```
+
+A public login page gets found and probed, so turn on 2FA (`webos-admin enable-totp`)
+if you go this way.
+
 **Back up `data/webos.db`.** It holds projects and the audit log. Live state is always
 read from Docker, so losing it loses no server state.
 
