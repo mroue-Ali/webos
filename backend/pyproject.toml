@@ -1,0 +1,63 @@
+[project]
+name = "webos"
+version = "0.1.0"
+description = "Self-hosted control panel for a single Docker Compose VPS"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "alembic>=1.14",
+    "argon2-cffi>=23.1",
+    "cryptography>=44",
+    "fastapi>=0.115",
+    "httpx>=0.28",
+    "itsdangerous>=2.2",
+    "pydantic-settings>=2.7",
+    "pyotp>=2.9",
+    "segno>=1.6",
+    "sqlalchemy>=2.0",
+    "uvicorn[standard]>=0.34",
+]
+
+[project.scripts]
+webos-admin = "webos.cli:main"
+
+[dependency-groups]
+dev = [
+    "mypy>=1.15",
+    "pytest>=8.3",
+    "ruff>=0.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["webos"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF", "ASYNC"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S104", "S105", "S106"]
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+packages = ["webos"]
+exclude = ["webos/migrations/"]
+
+[[tool.mypy.overrides]]
+module = ["pyotp", "segno"]
+ignore_missing_imports = true
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection markers are meant to be used as defaults.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path"]

@@ -1,0 +1,7 @@
+# Development only: exposes the socket proxy on 127.0.0.1:2375 so the backend can run on
+# the host with hot reload. Start just the proxy with:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d socket-proxy
+services:
+  socket-proxy:
+    ports: ["127.0.0.1:2375:2375"]
+    networks: [docker-api, default]

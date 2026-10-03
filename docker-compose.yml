@@ -1,0 +1,56 @@
+# webos: the panel, plus a filtering proxy in front of the Docker socket.
+# Usage: cp .env.example .env, fill it in, then `docker compose up -d --build`.
+name: webos
+
+services:
+  webos:
+    build: .
+    image: webos:local
+    restart: unless-stopped
+    user: "${WEBOS_UID:-1001}:${WEBOS_GID:-1001}"
+    env_file: .env
+    environment:
+      WEBOS_DOCKER_URL: http://socket-proxy:2375
+      WEBOS_SELF_PROJECT: webos
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # Loopback only. Never 0.0.0.0: Docker's own iptables rules bypass ufw.
+    ports: ["127.0.0.1:${WEBOS_PORT:-9000}:8000"]
+    # SQLite lives here. No Docker socket and no other host path is mounted.
+    volumes: ["./data:/data"]
+    networks: [default, docker-api]
+    depends_on: [socket-proxy]
+
+  # The panel never touches /var/run/docker.sock itself. This proxy forwards only the calls
+  # it needs; everything else is refused, including creating containers, exec, builds,
+  # images, volumes, networks and reading container filesystems (archive/export).
+  socket-proxy:
+    image: lscr.io/linuxserver/socket-proxy:3.4.6-r0-ls100@sha256:0357c479cc98e863917d1cd8b10e83d35a50ca46a0788f5a192bf792c3b7100d
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1      # list + inspect
+      ALLOW_LOGS: 1
+      ALLOW_START: 1
+      ALLOW_STOP: 1
+      ALLOW_RESTARTS: 1  # restart, stop, kill
+      EVENTS: 1
+      INFO: 1
+      PING: 1
+      VERSION: 1
+      POST: 0            # every other write is refused
+      EXEC: 0
+      BUILD: 0
+      IMAGES: 0
+      VOLUMES: 0
+      NETWORKS: 0
+    # :ro doesn't limit API calls on a socket; the environment above is the real filter.
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock:ro"]
+    read_only: true
+    tmpfs: [/run]
+    networks: [docker-api]
+
+networks:
+  docker-api:
+    internal: true  # no route out, no published ports: only webos can reach the proxy
