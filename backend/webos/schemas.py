@@ -16,6 +16,14 @@ COMPOSE_PROJECT = r"^[a-z0-9][a-z0-9_-]{0,63}$"
 # Pydantic's regex engine has no look-around; length is capped by max_length instead.
 DOMAIN = r"^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$"
 REPO_URL = r"^(https://|git@)[A-Za-z0-9._@:/~-]+$"
+# Same rules the host agent enforces (agent/webos_agent.py).
+REPO = (
+    r"^(https://[A-Za-z0-9.-]+(:[0-9]+)?/[A-Za-z0-9._~/-]+|git@[A-Za-z0-9.-]+:[A-Za-z0-9._~/-]+)$"
+)
+BRANCH = r"^[A-Za-z0-9._][A-Za-z0-9._/-]{0,99}$"
+REL_PATH = r"^[A-Za-z0-9._-][A-Za-z0-9._/-]{0,199}$"
+SERVICE = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+MAX_TEXT = 65536
 
 
 class LoginIn(BaseModel):
@@ -71,6 +79,19 @@ class ProjectOut(BaseModel):
     created_at: UtcDatetime
     is_self: bool
     containers: list[ContainerOut]
+    # Set for sites webos deployed itself.
+    managed: bool = False
+    state: str = "active"
+    branch: str | None = None
+    compose_file: str | None = None
+    env_file: str | None = None
+    web_service: str | None = None
+    container_port: int | None = None
+    aliases: list[str] = []
+    override: str | None = None
+    auto_deploy: bool = False
+    deployed_commit: str | None = None
+    deploying: bool = False
 
 
 class UnmanagedGroupOut(BaseModel):
@@ -217,3 +238,140 @@ class ServerOut(BaseModel):
     network: list[InterfaceOut] | None  # None when the host counters aren't mounted
     history: HistoryOut
     containers: list[ContainerUsageOut]
+
+
+# --- new-site wizard and deployments ---------------------------------------------------------
+
+
+class AgentStatusOut(BaseModel):
+    available: bool
+    error: str | None = None
+    version: str | None = None
+    apps_root: str | None = None
+    user: str | None = None
+    host_ips: list[str] = []
+    compose_version: str | None = None
+    nginx: bool | None = None
+    certbot: bool | None = None
+
+
+class SiteNameIn(BaseModel):
+    name: str = Field(pattern=SLUG)
+
+
+class DeployKeyOut(BaseModel):
+    public_key: str
+
+
+class SiteCreateIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(pattern=SLUG)
+    repo: str = Field(max_length=300, pattern=REPO)
+    branch: str = Field(default="main", pattern=BRANCH)
+
+
+class SiteCreatedOut(BaseModel):
+    slug: str
+    commit: str
+    subject: str
+    compose_files: list[str]
+
+
+class ServiceChoiceIn(BaseModel):
+    keep_volumes: list[str] | None = Field(default=None, max_length=50)
+    use_image_command: bool = False
+
+
+class SiteConfigIn(BaseModel):
+    compose_file: str = Field(pattern=REL_PATH)
+    env_file: str = Field(default=".env", pattern=REL_PATH)
+    web_service: str = Field(pattern=SERVICE)
+    container_port: int = Field(ge=1, le=65535)
+    services: dict[str, ServiceChoiceIn] = Field(default_factory=dict, max_length=50)
+
+
+class SiteInspectOut(BaseModel):
+    compose_file: str
+    services: dict[str, Any]
+    violations: list[str]
+    env_example: str
+    suggestion: dict[str, Any]
+    port: int
+    domain_suggestion: str | None
+    server_ips: list[str]
+
+
+class SitePreviewOut(BaseModel):
+    override: str
+    port: int
+    violations: list[str]
+    services: dict[str, Any]
+
+
+class SiteDeployIn(SiteConfigIn):
+    model_config = ConfigDict(extra="forbid")
+
+    domain: str = Field(max_length=253, pattern=DOMAIN)
+    aliases: list[Annotated[str, Field(max_length=253, pattern=DOMAIN)]] = Field(
+        default_factory=list, max_length=5
+    )
+    override: str = Field(min_length=1, max_length=MAX_TEXT)
+    env: str = Field(default="", max_length=MAX_TEXT)
+    auto_deploy: bool = False
+
+
+class DomainCheckOut(BaseModel):
+    domain: str
+    resolves_to: list[str]
+    server_ips: list[str]
+    ok: bool
+
+
+class DeployStartedOut(BaseModel):
+    deployment_id: int
+
+
+class DeploymentOut(BaseModel):
+    id: int
+    trigger: str
+    status: str
+    commit: str | None
+    subject: str | None
+    actor: str | None
+    started_at: UtcDatetime
+    finished_at: UtcDatetime | None
+    error: str | None
+
+
+class DeploymentDetailOut(DeploymentOut):
+    project: str
+    log: str
+
+
+class EnvOut(BaseModel):
+    content: str
+    exists: bool
+
+
+class EnvUpdateIn(BaseModel):
+    content: str = Field(max_length=MAX_TEXT)
+    confirm: str | None = Field(default=None, max_length=128)
+
+
+class SiteSettingsIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    auto_deploy: bool | None = None
+    override: str | None = Field(default=None, min_length=1, max_length=MAX_TEXT)
+
+
+class RemoveSiteIn(BaseModel):
+    confirm: str | None = Field(default=None, max_length=128)
+    delete_files: bool = False
+    delete_volumes: bool = False
+    code: str | None = Field(default=None, max_length=12)  # required when 2FA is on
+
+
+class RemoveSiteOut(BaseModel):
+    log: list[str]

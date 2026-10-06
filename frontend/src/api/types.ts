@@ -48,6 +48,19 @@ export interface Project {
   created_at: string
   is_self: boolean
   containers: Container[]
+  // Sites deployed through webos (the new-site wizard).
+  managed: boolean
+  state: 'draft' | 'active'
+  branch: string | null
+  compose_file: string | null
+  env_file: string | null
+  web_service: string | null
+  container_port: number | null
+  aliases: string[]
+  override: string | null
+  auto_deploy: boolean
+  deployed_commit: string | null
+  deploying: boolean
 }
 
 export interface UnmanagedGroup {
@@ -145,4 +158,97 @@ export interface ServerStats {
     tx: (number | null)[]
   }
   containers: ContainerUsage[]
+}
+
+export interface AgentStatus {
+  available: boolean
+  error: string | null
+  version: string | null
+  apps_root: string | null
+  user: string | null
+  host_ips: string[]
+  compose_version: string | null
+  nginx: boolean | null
+  certbot: boolean | null
+}
+
+export interface ComposeService {
+  image: string | null
+  build: boolean
+  command: string[] | string | null
+  ports: { target: number | null; published: string | null; host_ip: string | null }[]
+  volumes: { type: string | null; source: string | null; target: string | null }[]
+  expose: (string | number)[]
+  healthcheck: boolean
+}
+
+export interface ServiceChoice {
+  keep_volumes: string[] | null
+  use_image_command: boolean
+}
+
+export interface SiteCreated {
+  slug: string
+  commit: string
+  subject: string
+  compose_files: string[]
+}
+
+export interface SiteInspect {
+  compose_file: string
+  services: Record<string, ComposeService>
+  violations: string[]
+  env_example: string
+  suggestion: {
+    web_service: string | null
+    container_port: number | null
+    services: Record<string, ServiceChoice & { dev_mounts: string[] }>
+  }
+  port: number
+  domain_suggestion: string | null
+  server_ips: string[]
+}
+
+export interface SiteConfig {
+  compose_file: string
+  env_file: string
+  web_service: string
+  container_port: number
+  services: Record<string, ServiceChoice>
+}
+
+export interface SitePreview {
+  override: string
+  port: number
+  violations: string[]
+  services: Record<string, ComposeService>
+}
+
+export interface DomainCheck {
+  domain: string
+  resolves_to: string[]
+  server_ips: string[]
+  ok: boolean
+}
+
+export interface Deployment {
+  id: number
+  trigger: 'create' | 'manual' | 'auto' | 'env'
+  status: 'running' | 'ok' | 'failed'
+  commit: string | null
+  subject: string | null
+  actor: string | null
+  started_at: string
+  finished_at: string | null
+  error: string | null
+}
+
+export interface DeploymentDetail extends Deployment {
+  project: string
+  log: string
+}
+
+export interface EnvContent {
+  content: string
+  exists: boolean
 }

@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Container, LogLine } from '../api/types'
-import { parseAnsi } from '../lib/ansi'
 import { formatTime } from '../lib/format'
 import { isErrorLine } from '../lib/logs'
 import { useEventSource } from '../lib/useEventSource'
+import { LogText } from './LogText'
 
 const MAX_LINES = 5000
 const FLUSH_MS = 200
@@ -13,19 +13,6 @@ type Filter = 'all' | 'errors' | 'stderr'
 interface Line extends LogLine {
   key: number
   error: boolean
-}
-
-function LogText({ text }: { text: string }) {
-  // Rendered as text nodes only; colours map to fixed class names, never to markup.
-  return (
-    <>
-      {parseAnsi(text).map((s, i) => (
-        <span key={i} className={[s.fg && `ansi-${s.fg}`, s.bold && 'ansi-bold'].filter(Boolean).join(' ') || undefined}>
-          {s.text}
-        </span>
-      ))}
-    </>
-  )
 }
 
 /** Live log tail for one container. Mount with key={container.id} to reset on switch. */

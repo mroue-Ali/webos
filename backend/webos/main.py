@@ -14,12 +14,14 @@ from starlette.staticfiles import StaticFiles
 from starlette.types import Scope
 
 from webos import __version__
+from webos.agent_client import Agent, AgentClient, AgentError, AgentUnavailable
 from webos.config import Settings
 from webos.context import AppContext
 from webos.db import make_engine
+from webos.deployer import DeployBusy, Deployer, DeployFailed, auto_deploy_loop
 from webos.docker_api import DockerClient, DockerError
 from webos.metrics import HostSampler, ServerMetrics
-from webos.routers import audit_log, auth, containers, overview, projects, server
+from webos.routers import audit_log, auth, containers, overview, projects, server, sites
 from webos.security.keys import derive_key
 from webos.security.middleware import (
     OriginGuardMiddleware,
@@ -47,16 +49,19 @@ def create_app(
     settings: Settings | None = None,
     *,
     docker: DockerClient | None = None,
+    agent: Agent | None = None,
     clock: Callable[[], float] = time.time,
 ) -> FastAPI:
     settings = settings or Settings()
     engine = make_engine(settings.database_url)
     docker = docker or DockerClient(settings.docker_url)
+    agent = agent or AgentClient(settings.agent_socket)
+    sessions = sessionmaker(engine, expire_on_commit=False)
     secret = settings.secret_key.get_secret_value()
 
     ctx = AppContext(
         settings=settings,
-        sessionmaker=sessionmaker(engine, expire_on_commit=False),
+        sessionmaker=sessions,
         docker=docker,
         sessions=SessionCodec(
             derive_key(secret, "session"),
@@ -75,6 +80,8 @@ def create_app(
                 clock=clock,
             ),
         ),
+        agent=agent,
+        deployer=Deployer(agent, sessions),
         clock=clock,
     )
 
@@ -82,10 +89,15 @@ def create_app(
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         ctx.metrics.sampler.sample()  # a baseline, so the first CPU % needs one interval
         sampler = asyncio.create_task(ctx.metrics.sampler.run())
+        ctx.deployer.mark_interrupted()
+        deploys = asyncio.create_task(
+            auto_deploy_loop(ctx.deployer, settings.auto_deploy_interval_seconds)
+        )
         yield
-        sampler.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await sampler
+        for task in (sampler, deploys):
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await docker.aclose()
         engine.dispose()
 
@@ -105,11 +117,28 @@ def create_app(
         code = exc.status if exc.status in (400, 404, 409) else 502
         return JSONResponse({"detail": exc.message}, status_code=code)
 
+    @app.exception_handler(AgentUnavailable)
+    async def agent_unavailable(_request: Request, exc: AgentUnavailable) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=503)
+
+    @app.exception_handler(AgentError)
+    async def agent_error(_request: Request, exc: AgentError) -> JSONResponse:
+        # The agent's refusals and failures are meant to be read: pass them through.
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+
+    @app.exception_handler(DeployBusy)
+    async def deploy_busy(_request: Request, exc: DeployBusy) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+
+    @app.exception_handler(DeployFailed)
+    async def deploy_failed(_request: Request, exc: DeployFailed) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+
     @app.get("/healthz", include_in_schema=False)
     async def healthz() -> dict[str, bool]:
         return {"ok": True}
 
-    for module in (auth, overview, server, projects, containers, audit_log):
+    for module in (auth, overview, server, sites, projects, containers, audit_log):
         app.include_router(module.router)
 
     static_dir = settings.static_dir

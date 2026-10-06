@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import Index, String, Text
+from sqlalchemy import ForeignKey, Index, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -48,6 +48,44 @@ class Project(Base):
     port: Mapped[int | None] = mapped_column(unique=True)
     repo_url: Mapped[str | None] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
+
+    # Sites deployed through the wizard. Imported stacks leave these unset.
+    managed: Mapped[bool] = mapped_column(default=False)
+    state: Mapped[str] = mapped_column(String(16), default="active")  # draft | active
+    branch: Mapped[str | None] = mapped_column(String(100))
+    compose_file: Mapped[str | None] = mapped_column(String(200))  # relative to the repo
+    env_file: Mapped[str | None] = mapped_column(String(200))  # relative to the compose file
+    web_service: Mapped[str | None] = mapped_column(String(64))
+    container_port: Mapped[int | None] = mapped_column()
+    aliases: Mapped[str | None] = mapped_column(String(600))  # extra hostnames, space-separated
+    # The production layer (docker-compose.webos.yml). Not secret: no env values in it.
+    override: Mapped[str | None] = mapped_column(Text)
+    auto_deploy: Mapped[bool] = mapped_column(default=False)
+    deployed_commit: Mapped[str | None] = mapped_column(String(64))
+
+    @property
+    def alias_list(self) -> list[str]:
+        return (self.aliases or "").split()
+
+
+class Deployment(Base):
+    """One run of a deploy pipeline, with its log. Project secrets are never logged."""
+
+    __tablename__ = "deployments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    trigger: Mapped[str] = mapped_column(String(16))  # create | manual | auto | env
+    status: Mapped[str] = mapped_column(String(16))  # running | ok | failed
+    commit: Mapped[str | None] = mapped_column(String(64))
+    subject: Mapped[str | None] = mapped_column(String(200))
+    actor: Mapped[str | None] = mapped_column(String(64))
+    started_at: Mapped[datetime] = mapped_column(default=utcnow)
+    finished_at: Mapped[datetime | None] = mapped_column()
+    error: Mapped[str | None] = mapped_column(String(500))
+    log: Mapped[str] = mapped_column(Text, default="")
 
 
 class AuditEvent(Base):

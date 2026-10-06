@@ -40,6 +40,16 @@ class Settings(BaseSettings):
     disk_path: Path = Path("/data")
     metrics_interval_seconds: float = Field(default=5.0, gt=0)
 
+    # webos-agent, the host helper that deploys sites (agent/install.sh).
+    agent_socket: Path = Path("/run/webos-agent/agent.sock")
+    # Offered as `<name>.<base_domain>` in the new-site wizard (wildcard DNS helps here).
+    base_domain: str | None = None
+    # Loopback ports handed out to new sites.
+    site_port_min: int = 8000
+    site_port_max: int = 8999
+    # How often auto-deploy checks repositories for new commits.
+    auto_deploy_interval_seconds: float = Field(default=60.0, ge=10)
+
     static_dir: Path | None = None
     debug: bool = False
 

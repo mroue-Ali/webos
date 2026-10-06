@@ -19,6 +19,10 @@ week.
 - Leaking project secrets (container environment, `.env` files) through the API or the
   audit log
 - Anything that lets the panel change SSH, firewall or systemd configuration
+- Making `webos-agent` act outside its verbs or validation: a path outside a project,
+  git option injection, overwriting an nginx site it didn't create, or a compose setup
+  that slips past the safety check
+- Project env values showing up anywhere besides the project's `.env`
 
 ## Design assumptions
 

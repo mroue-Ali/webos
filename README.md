@@ -4,12 +4,19 @@ A self-hosted control panel for a single VPS that runs its sites as Docker Compo
 behind a host nginx. See what's running, start/stop/restart it, and follow live logs from
 the browser, with every change written to an audit log.
 
-> **Status: milestone 1 (dashboard).** Next up: a "new site" wizard (compose + nginx +
-> certbot + push-to-deploy), then git and a file editor, then a web terminal.
-> See [docs/PLAN.md](docs/PLAN.md).
+> **Status: milestones 1 and 2** (dashboard, new-site wizard). Next up: git and a file
+> editor, then a web terminal. See [docs/PLAN.md](docs/PLAN.md).
 
 ## What it does today
 
+- **New site wizard:** give it a repository, a domain and the env vars; it clones the
+  repo, puts the app on a free loopback port behind nginx, gets the HTTPS certificate and
+  deploys, with the whole log streamed live. Private repositories get a read-only deploy
+  key. The repository's compose file is used as it is, with a small production layer on
+  top (loopback-only port, private databases, no dev mounts or `--reload`), checked by a
+  safety check before anything starts.
+- **Deployments:** "Deploy now", optional auto-deploy when the branch gets a new commit
+  (checked every minute), full history with logs, an environment editor, and site removal.
 - **Server page:** CPU, memory, swap, load, disk, and network in/out with 30-minute
   trend lines; how much disk Docker's images, volumes and build cache take; each running
   container's CPU, memory and traffic.
@@ -49,6 +56,10 @@ root on the server. The design follows from that:
   can write into a public site's logs.
 - **Secrets stay out:** project `.env` values are stripped from container details before
   anything else sees them, and never stored or logged.
+- **Deploying goes through a small host helper** (`agent/`), the only part that runs as
+  root. It accepts a fixed list of actions, validates every argument, runs git and Docker
+  as your normal user, never overwrites an nginx site it didn't create, and runs in a
+  systemd sandbox where SSH config, SSH keys and systemd itself are out of reach.
 - **It never touches SSH or the firewall.**
 
 Details and the threat model are in [docs/PLAN.md](docs/PLAN.md). To report a
@@ -100,6 +111,20 @@ sudo certbot --nginx -d webos.your-domain
 
 A public login page gets found and probed, so turn on 2FA (`webos-admin enable-totp`)
 if you go this way.
+
+### Deploying sites (the host helper)
+
+The new-site wizard needs `webos-agent`, a small root service, installed once (it needs
+python3, git, nginx and certbot on the host, which the platform pattern already has):
+
+```bash
+sudo sh agent/install.sh
+```
+
+It prints a `WEBOS_AGENT_GID=...` line: add it to `.env`, optionally with
+`WEBOS_BASE_DOMAIN=your-domain` (the wizard then suggests `<name>.your-domain`), and run
+`docker compose up -d`. Sites are cloned into `~/apps/<name>`. To update the helper later,
+run the install command again after `git pull`.
 
 **Back up `data/webos.db`.** It holds projects and the audit log. Live state is always
 read from Docker, so losing it loses no server state.

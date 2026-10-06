@@ -76,7 +76,12 @@ export function DashboardPage() {
       )}
 
       <section>
-        <h2>Projects</h2>
+        <div className="section-head">
+          <h2>Projects</h2>
+          <Link to="/new" className="btn primary small">
+            New site
+          </Link>
+        </div>
         {projects.length === 0 && (
           <p className="muted">
             No projects registered yet. Import one from the list below to control it.
@@ -91,6 +96,12 @@ export function DashboardPage() {
               {p.domain && <span className="muted small">{p.domain}</span>}
               {p.port && <span className="muted small mono">127.0.0.1:{p.port}</span>}
               {p.is_self && <span className="badge neutral">this panel</span>}
+              {p.managed && p.state === 'draft' && (
+                <Link to={`/new?site=${p.slug}`} className="badge warn">
+                  setup not finished
+                </Link>
+              )}
+              {p.deploying && <span className="badge warn">deploying…</span>}
               <div className="spacer" />
               <Link to={`/projects/${p.slug}`} className="btn small">
                 Open

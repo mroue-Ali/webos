@@ -2,6 +2,7 @@
 
 import asyncio
 from collections import defaultdict
+from collections.abc import Callable
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -80,7 +81,13 @@ def container_out(
     )
 
 
-async def build_overview(docker: DockerClient, db: Session, *, self_project: str) -> OverviewOut:
+async def build_overview(
+    docker: DockerClient,
+    db: Session,
+    *,
+    self_project: str,
+    busy: Callable[[str], bool] = lambda _slug: False,
+) -> OverviewOut:
     version, pairs = await asyncio.gather(docker.version(), load_containers(docker))
     projects = db.scalars(select(Project).order_by(Project.slug)).all()
 
@@ -106,6 +113,18 @@ async def build_overview(docker: DockerClient, db: Session, *, self_project: str
                     container_out(c, d, manageable=not is_self)
                     for c, d in groups.get(project.compose_project, [])
                 ],
+                managed=project.managed,
+                state=project.state,
+                branch=project.branch,
+                compose_file=project.compose_file,
+                env_file=project.env_file,
+                web_service=project.web_service,
+                container_port=project.container_port,
+                aliases=project.alias_list,
+                override=project.override,
+                auto_deploy=project.auto_deploy,
+                deployed_commit=project.deployed_commit,
+                deploying=busy(project.slug),
             )
         )
 

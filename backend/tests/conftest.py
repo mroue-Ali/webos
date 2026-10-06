@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from webos import migrate
+from webos.agent_client import AgentUnavailable
 from webos.config import Settings
 from webos.docker_api import DockerClient
 from webos.main import create_app
@@ -202,6 +203,109 @@ class FakeDocker:
         return httpx.Response(404, json={"message": "page not found"})
 
 
+SERVER_IP = "203.0.113.10"
+
+
+def repo_compose(args: dict[str, Any]) -> dict[str, Any]:
+    """What the fake agent's `compose_config` answers: dev ports without an override."""
+    with_override = bool(args.get("override"))
+    api_ports = (
+        [{"target": 8000, "published": "8002", "host_ip": "127.0.0.1"}]
+        if with_override
+        else [{"target": 8000, "published": "8080", "host_ip": None}]
+    )
+    return {
+        "services": {
+            "api": {
+                "image": None,
+                "build": True,
+                "command": ["uvicorn", "app.main:app", "--reload"],
+                "ports": api_ports,
+                "volumes": [{"type": "bind", "source": "/srv/apps/t30/backend", "target": "/app"}],
+                "expose": [],
+                "healthcheck": False,
+            },
+            "db": {
+                "image": "postgres:16",
+                "build": False,
+                "command": None,
+                "ports": []
+                if with_override
+                else [{"target": 5432, "published": "5433", "host_ip": None}],
+                "volumes": [
+                    {"type": "volume", "source": "pgdata", "target": "/var/lib/postgresql/data"}
+                ],
+                "expose": [],
+                "healthcheck": True,
+            },
+        },
+        "violations": []
+        if with_override
+        else ["api: port 8080 would be open", "db: port 5433 would be open"],
+        "has_env_example": True,
+    }
+
+
+@dataclass
+class FakeAgent:
+    """Stands in for webos-agent: records calls and answers from a table."""
+
+    calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    available: bool = True
+    answers: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        self.answers = {
+            "ping": {
+                "version": "1",
+                "apps_root": "/srv/apps",
+                "user": "ali",
+                "host_ips": [SERVER_IP],
+                "compose_version": "2.35.1",
+                "nginx": True,
+                "certbot": True,
+            },
+            "ports": {"listening": [22, 80, 443, 8000, 8001]},
+            "deploy_key": {"public_key": "ssh-ed25519 AAAAfake webos-t30@vps"},
+            "clone": {"commit": "a" * 40, "subject": "init", "author": "me", "date": ""},
+            "head": {"commit": "a" * 40, "subject": "init", "author": "me", "date": ""},
+            "pull": {"commit": "b" * 40, "subject": "fix", "author": "me", "date": ""},
+            "remote_head": {"commit": "a" * 40},
+            "find_compose": {"files": ["backend/docker-compose.yml"]},
+            "compose_config": repo_compose,
+            "env_example": {"content": "POSTGRES_PASSWORD=\nADMIN_TOKEN=\n"},
+            "read_env": {"content": "ADMIN_TOKEN=hunter2\n", "exists": True},
+            **self.answers,
+        }
+
+    def names(self) -> list[str]:
+        return [verb for verb, _ in self.calls]
+
+    def args_of(self, verb: str) -> list[dict[str, Any]]:
+        return [args for name, args in self.calls if name == verb]
+
+    async def call(
+        self,
+        verb: str,
+        args: dict[str, Any] | None = None,
+        *,
+        on_log: Any = None,
+        timeout: float = 120,
+    ) -> Any:
+        args = args or {}
+        self.calls.append((verb, args))
+        if not self.available:
+            raise AgentUnavailable("webos-agent isn't running")
+        answer = self.answers.get(verb, {})
+        if callable(answer):
+            answer = answer(args)
+        if isinstance(answer, Exception):
+            raise answer
+        if on_log is not None:
+            on_log(f"(fake) {verb}")
+        return answer
+
+
 @dataclass
 class Env:
     app: FastAPI
@@ -209,6 +313,7 @@ class Env:
     docker: FakeDocker
     clock: FakeClock
     proc: Path
+    agent: FakeAgent
 
     def db(self) -> Session:
         return self.app.state.ctx.sessionmaker()  # type: ignore[no-any-return]
@@ -236,14 +341,18 @@ def env(tmp_path: Path) -> Iterator[Env]:
         host_net_dev=proc / "net_dev",
         disk_path=tmp_path,
         metrics_interval_seconds=3600,  # tests call sampler.sample() themselves
+        auto_deploy_interval_seconds=3600,  # tests call check_for_updates() themselves
+        base_domain="example.com",
         _env_file=None,  # type: ignore[call-arg]
     )
     migrate.upgrade(settings.database_url)
     docker = FakeDocker()
     clock = FakeClock()
+    agent = FakeAgent()
     app = create_app(
         settings,
         docker=DockerClient("http://docker.test", transport=httpx.MockTransport(docker.handler)),
+        agent=agent,
         clock=clock,
     )
     with app.state.ctx.sessionmaker() as db:
@@ -256,7 +365,7 @@ def env(tmp_path: Path) -> Iterator[Env]:
         )
         db.commit()
     with TestClient(app, base_url=ORIGIN, headers={"Origin": ORIGIN, "X-WebOS": "1"}) as client:
-        yield Env(app=app, client=client, docker=docker, clock=clock, proc=proc)
+        yield Env(app=app, client=client, docker=docker, clock=clock, proc=proc, agent=agent)
 
 
 @pytest.fixture

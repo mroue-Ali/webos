@@ -5,6 +5,7 @@ import type { Project } from '../api/types'
 import { ConfirmDialog, type ConfirmRequest } from '../components/ConfirmDialog'
 import { ContainerTable } from '../components/ContainerTable'
 import { LogViewer } from '../components/LogViewer'
+import { SitePanel } from '../components/SitePanel'
 import { useContainerActions } from '../lib/useContainerActions'
 
 export function ProjectPage() {
@@ -99,6 +100,8 @@ export function ProjectPage() {
         />
       </div>
 
+      {project.managed && <SitePanel project={project} />}
+
       {logContainer && <LogViewer key={logContainer.id} container={logContainer} />}
 
       <ProjectSettings key={project.slug} project={project} />
@@ -121,12 +124,16 @@ function ProjectSettings({ project }: { project: Project }) {
 
   function submit(event: FormEvent) {
     event.preventDefault()
-    update.mutate({
-      display_name: form.display_name.trim(),
-      domain: form.domain.trim().toLowerCase() || null,
-      repo_url: form.repo_url.trim() || null,
-      port: form.port ? Number(form.port) : null,
-    })
+    update.mutate(
+      project.managed
+        ? { display_name: form.display_name.trim() }
+        : {
+            display_name: form.display_name.trim(),
+            domain: form.domain.trim().toLowerCase() || null,
+            repo_url: form.repo_url.trim() || null,
+            port: form.port ? Number(form.port) : null,
+          },
+    )
   }
 
   const field = (name: keyof typeof form) => ({
@@ -142,18 +149,22 @@ function ProjectSettings({ project }: { project: Project }) {
           Name
           <input {...field('display_name')} required maxLength={80} />
         </label>
-        <label>
-          Domain
-          <input {...field('domain')} placeholder="shop.example.com" />
-        </label>
-        <label>
-          Repository
-          <input {...field('repo_url')} placeholder="git@github.com:you/repo.git" />
-        </label>
-        <label>
-          Assigned port
-          <input {...field('port')} inputMode="numeric" placeholder="8002" />
-        </label>
+        {!project.managed && (
+          <>
+            <label>
+              Domain
+              <input {...field('domain')} placeholder="shop.example.com" />
+            </label>
+            <label>
+              Repository
+              <input {...field('repo_url')} placeholder="git@github.com:you/repo.git" />
+            </label>
+            <label>
+              Assigned port
+              <input {...field('port')} inputMode="numeric" placeholder="8002" />
+            </label>
+          </>
+        )}
         <div className="form-actions">
           {update.error && <span className="error-text">{update.error.message}</span>}
           {update.isSuccess && <span className="muted small">Saved.</span>}
@@ -163,6 +174,7 @@ function ProjectSettings({ project }: { project: Project }) {
         </div>
       </form>
 
+      {!project.managed && (
       <div className="danger-zone">
         <div>
           <strong>Unregister project</strong>
@@ -189,6 +201,7 @@ function ProjectSettings({ project }: { project: Project }) {
           Unregister
         </button>
       </div>
+      )}
       <ConfirmDialog request={confirm} onClose={() => setConfirm(null)} />
     </section>
   )

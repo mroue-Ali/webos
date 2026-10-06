@@ -390,36 +390,81 @@ compose up -d --build`.
 
 ## 12. Later milestones (outline)
 
-**2 — New site wizard.** Adds the host agent, a stdlib-only Python service that systemd
-runs as root on `/run/webos/agent.sock` (0660, group passed to the container). It speaks
-JSON over the socket and accepts only fixed verbs:
-- `nginx.write_site`: rendered from a template; the domain is regex-validated
-- `nginx.test_and_reload`: `nginx -t`, then `nginx -s reload`
-- `certbot.issue`
-- `compose.up` / `compose.down`: run as ali inside the project directory, so bind-mount
-  paths resolve the way they do today
-- `deploy.run`
-- `ports.listening`
+**2 — New site wizard. Implemented 2026-10-06.**
 
-Its systemd unit uses `InaccessiblePaths=/etc/ssh /run/systemd/private
-/run/dbus/system_bus_socket`. The agent's own code paths then can't edit sshd config or
-ask systemd to restart anything. Docker access is still root-equivalent, which is why
-every compose file passes a **policy check** before `up`. Using `docker compose config`,
-it refuses:
-- ports without the `127.0.0.1:` prefix
-- `privileged`, host network/pid/ipc, `cap_add` and devices
-- bind mounts outside the project directory
-- the Docker socket
+*The host agent* (`agent/webos_agent.py`): one stdlib-only Python file, run by systemd as
+root and installed by `agent/install.sh`. It listens on `/run/webos-agent/agent.sock`,
+mode 0660, group `webos-agent`; the panel gets that group through `group_add`. The
+protocol is one JSON request per connection, answered with streamed log lines and a final
+result. It accepts a fixed set of verbs:
 
-Two decisions are due in milestone 2:
+- `ping`, `ports`
+- `deploy_key`, `clone`, `head`, `pull`, `remote_head`
+- `find_compose`, `compose_config`, `env_example`, `read_env`, `write_env`
+- `up`, `down`, `http_check`
+- `nginx_site`, `nginx_remove`, `certbot`, `cert_delete`, `discard`
 
-- **Deploy keys:** write forced-command keys to `~/.ssh/authorized_keys2` and never touch
-  `authorized_keys`, which holds your login key. Writes are atomic, owned by ali, mode
-  0600, and `~/.ssh` permissions are never changed. A bad `StrictModes` permission or a
-  botched write on `authorized_keys` would lock you out. First check `AuthorizedKeysFile`
-  with the read-only `sudo sshd -T`.
-- **GitHub secrets:** either the wizard shows the four values for you to paste, or it uses a
-  fine-grained PAT, scoped per repo, stored in the panel's `.env`.
+How it stays safe:
+
+- Every argument is validated: names, branches, repo URLs, domains, ports, and paths
+  confined to the project folder.
+- Commands run as argument lists, never through a shell, and git and docker run as the
+  apps user.
+- It never overwrites or removes an nginx site without its marker, refuses a domain
+  another enabled site already serves, and rolls back when `nginx -t` fails. nginx is
+  reloaded with a signal.
+- Its systemd sandbox: `ProtectSystem=strict` with only the paths it needs writable, and
+  `/etc/ssh`, `~/.ssh` and systemd's control sockets inaccessible.
+- Docker access is still root-equivalent. That's why `up` re-runs the **safety check** on
+  the merged `docker compose config`, refusing public ports, privileged mode, host
+  namespaces, extra capabilities, devices, binds outside the project and the Docker
+  socket.
+
+*The production layer* (`webos/compose_override.py`). The repository stays untouched.
+webos writes `docker-compose.webos.yml` next to the compose file, using Compose's
+`!override` and `!reset` tags:
+
+- the web service is published on `127.0.0.1:<assigned port>` only;
+- every other service publishes nothing;
+- everything restarts unless stopped;
+- optionally, dev-only bind mounts (`.:/app`) and dev commands (`--reload`) are dropped.
+
+The wizard suggests these choices. You can edit the layer, and it's stored in the
+database; it contains no secrets.
+
+*Deploy keys and push-to-deploy, decided.* Neither touches SSH on the server:
+
+- **Private repos:** the agent creates a per-site key under `~/apps/.webos/keys` that git
+  uses to *fetch*. The repo owner adds its public half as a read-only Deploy key on
+  GitHub. GitHub's host keys are pinned from `api.github.com/meta` over TLS.
+- **Push-to-deploy:** auto-deploy polls `git ls-remote` every minute and redeploys on a
+  new commit. It doesn't retry a commit that failed, and needs no webhooks, Actions
+  secrets or `authorized_keys` entries.
+
+*Pipelines* (`webos/deployer.py`): one at a time per site, streamed live over SSE and
+saved as history.
+
+- **create:** write the env, safety check, build and start, health check on
+  `127.0.0.1:<port>`, DNS must point at this server, nginx site, certificate. Safe to
+  retry after a failure, because every step is idempotent.
+- **manual / auto:** pull, check, build, health check.
+- **env:** write the env, check, rebuild, health check.
+
+*Secrets:* the env content goes from the browser straight to the agent, which writes the
+file owner-only. The panel never stores or logs it; audit rows record key names only.
+Reading the env back is itself audited. Removing a site requires the typed name, plus a
+fresh code when 2FA is on.
+
+*Tests:*
+
+- Unit tests for the agent (validation, policy, nginx handling, rollback) and for the
+  panel (wizard, pipelines, auto-deploy, secrecy), using a fake agent.
+- An end-to-end run on Docker Desktop: the real agent as root in an Ubuntu container with
+  real nginx, git and Compose deployed `docker/awesome-compose`'s flask app. The run
+  covered clone, layer, build, health check, a real DNS check via nip.io, nginx, then
+  redeploy, env edit and removal.
+- On real files, the agent refused webos's own compose file (Docker socket, outside bind)
+  and a `--upload-pack` injection.
 
 **3 — Git and files.** Mount `~/apps` at the same path. Every path goes through
 realpath and must stay under the project's `working_dir`; symlinks that escape it are
@@ -437,5 +482,6 @@ separate user without sudo, which is still root-equivalent if it's in the docker
 
 ## 13. Open questions
 
-None blocking. Decide in milestone 2: deploy keys in `authorized_keys2` (§12), and whether
-GitHub secrets are pasted by hand or set with a scoped token.
+None blocking. Possible follow-ups: GitHub webhooks for instant deploys, now that the
+panel is reachable publicly; static-site support, for a site with no compose file; and a
+warning when a repository tracks its `.env` in git, since pulls would reset it.

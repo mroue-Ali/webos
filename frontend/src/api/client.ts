@@ -23,7 +23,7 @@ function messageFrom(data: unknown): string | null {
 /** JSON request to the webos API. Mutations carry X-WebOS, which the server requires. */
 export async function api<T>(
   path: string,
-  options: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown } = {},
+  options: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown } = {},
 ): Promise<T> {
   const method = options.method ?? 'GET'
   const headers: Record<string, string> = { Accept: 'application/json' }

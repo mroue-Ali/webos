@@ -9,6 +9,8 @@ keep it clean and documented. The design, threat model and milestones are in
   (migrations in `webos/migrations`), managed with uv. Admin CLI: `webos-admin`.
 - `frontend/`: React + TypeScript + Vite. Built into the image and served by the backend
   (same origin, no CORS).
+- `agent/`: `webos-agent`, the root host helper that deploys sites (stdlib-only Python,
+  systemd sandbox, installed by `agent/install.sh`). Tests: `cd backend && uv run pytest ../agent`.
 - `docker-compose.yml`: the panel plus a filtering Docker socket proxy.
   `docker-compose.dev.yml` exposes the proxy on 127.0.0.1:2375 for local development.
 
@@ -24,6 +26,11 @@ keep it clean and documented. The design, threat model and milestones are in
 - The panel must never touch sshd config, `ssh.socket`/`ssh.service`, or ufw.
 - Every Docker endpoint lives in `backend/webos/docker_api.py`, and the socket proxy env
   in `docker-compose.yml` must allow exactly those. Never widen the proxy casually.
+- Host changes go only through webos-agent's fixed verbs. Every new verb validates every
+  argument, runs commands as argument lists (never a shell), and never touches SSH,
+  ufw or systemd. The agent never overwrites an nginx site without its marker.
+- Project env content passes from the browser to the agent only: never into the
+  database, the deployment logs or the audit log (key names only).
 - Server stats (`webos/metrics.py`) read the host via `/proc` and a read-only
   `/proc/1/net/dev` mount. History is in memory only, never in the database.
 - Every state change is audited (`webos.audit.record_request` / `audited`). Disruptive

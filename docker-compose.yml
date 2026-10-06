@@ -24,6 +24,11 @@ services:
       # Read-only host network byte counters, for the Server page. (CPU, memory and load
       # need no mount: /proc inside a container already shows the host's.)
       - /proc/1/net/dev:/host/net_dev:ro
+      # webos-agent's socket (agent/install.sh), for deploying sites. Without the agent the
+      # panel still works; only the new-site wizard and deploys are unavailable.
+      - /run/webos-agent:/run/webos-agent:ro
+    # Membership of the agent's group is what lets the panel open that socket.
+    group_add: ["${WEBOS_AGENT_GID:-65534}"]
     networks: [default, docker-api]
     depends_on: [socket-proxy]
 

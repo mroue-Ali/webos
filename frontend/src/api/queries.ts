@@ -5,7 +5,23 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import { api } from './client'
-import type { Action, AuditPage, LoginResult, Me, Overview, ServerStats } from './types'
+import type {
+  Action,
+  AgentStatus,
+  AuditPage,
+  Deployment,
+  DeploymentDetail,
+  DomainCheck,
+  EnvContent,
+  LoginResult,
+  Me,
+  Overview,
+  ServerStats,
+  SiteConfig,
+  SiteCreated,
+  SiteInspect,
+  SitePreview,
+} from './types'
 
 export const keys = {
   me: ['me'] as const,
@@ -115,6 +131,159 @@ export function useUnregisterProject() {
   return useMutation({
     mutationFn: (slug: string) =>
       api(`/api/projects/${slug}`, { method: 'DELETE', body: { confirm: slug } }),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.overview }),
+  })
+}
+
+// --- sites and deployments ------------------------------------------------------------------
+
+export function useAgent() {
+  return useQuery({ queryKey: ['agent'], queryFn: () => api<AgentStatus>('/api/agent') })
+}
+
+export function useDeployKey() {
+  return useMutation({
+    mutationFn: (name: string) =>
+      api<{ public_key: string }>('/api/sites/deploy-key', { method: 'POST', body: { name } }),
+  })
+}
+
+export function useCreateSite() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { name: string; repo: string; branch: string }) =>
+      api<SiteCreated>('/api/sites', { method: 'POST', body }),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.overview }),
+  })
+}
+
+export function useComposeFiles(slug: string | null) {
+  return useQuery({
+    queryKey: ['compose-files', slug],
+    queryFn: () => api<string[]>(`/api/sites/${slug}/compose-files`),
+    enabled: !!slug,
+  })
+}
+
+export function useInspect(slug: string | null, composeFile: string | null) {
+  return useQuery({
+    queryKey: ['inspect', slug, composeFile],
+    queryFn: () =>
+      api<SiteInspect>(
+        `/api/sites/${slug}/inspect?compose_file=${encodeURIComponent(composeFile ?? '')}`,
+      ),
+    enabled: !!slug && !!composeFile,
+    staleTime: Infinity,
+  })
+}
+
+export function usePreview(slug: string) {
+  return useMutation({
+    mutationFn: (config: SiteConfig) =>
+      api<SitePreview>(`/api/sites/${slug}/preview`, { method: 'POST', body: config }),
+  })
+}
+
+export function useCheckDomain() {
+  return useMutation({
+    mutationFn: (domain: string) =>
+      api<DomainCheck>(`/api/sites/check-domain?domain=${encodeURIComponent(domain)}`),
+  })
+}
+
+export interface DeploySiteBody extends SiteConfig {
+  domain: string
+  aliases: string[]
+  override: string
+  env: string
+  auto_deploy: boolean
+}
+
+export function useDeploySite(slug: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (body: DeploySiteBody) =>
+      api<{ deployment_id: number }>(`/api/sites/${slug}/deploy`, { method: 'POST', body }),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.overview }),
+  })
+}
+
+export function useDiscardDraft() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (slug: string) =>
+      api(`/api/sites/${slug}`, { method: 'DELETE', body: { confirm: slug } }),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.overview }),
+  })
+}
+
+export function useDeployments(slug: string, live: boolean) {
+  return useQuery({
+    queryKey: ['deployments', slug],
+    queryFn: () => api<Deployment[]>(`/api/projects/${slug}/deployments`),
+    refetchInterval: live ? 3_000 : 30_000,
+  })
+}
+
+export function useDeployment(id: number | null) {
+  return useQuery({
+    queryKey: ['deployment', id],
+    queryFn: () => api<DeploymentDetail>(`/api/deployments/${id}`),
+    enabled: id !== null,
+  })
+}
+
+export function useRedeploy() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (slug: string) =>
+      api<{ deployment_id: number }>(`/api/projects/${slug}/deploy`, {
+        method: 'POST',
+        body: { confirm: slug },
+      }),
+    onSettled: () => {
+      void client.invalidateQueries({ queryKey: keys.overview })
+      void client.invalidateQueries({ queryKey: ['deployments'] })
+    },
+  })
+}
+
+export function useUpdateSite(slug: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { auto_deploy?: boolean; override?: string }) =>
+      api(`/api/projects/${slug}/site`, { method: 'PATCH', body }),
+    onSettled: () => client.invalidateQueries({ queryKey: keys.overview }),
+  })
+}
+
+/** Reading the .env is audited, so it's fetched on an explicit click, not on page load. */
+export function useReadEnv(slug: string) {
+  return useMutation({
+    mutationFn: () => api<EnvContent>(`/api/projects/${slug}/env`),
+  })
+}
+
+export function useUpdateEnv(slug: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (content: string) =>
+      api<{ deployment_id: number }>(`/api/projects/${slug}/env`, {
+        method: 'PUT',
+        body: { content, confirm: slug },
+      }),
+    onSettled: () => client.invalidateQueries({ queryKey: ['deployments'] }),
+  })
+}
+
+export function useRemoveSite(slug: string) {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { delete_files: boolean; delete_volumes: boolean; code?: string }) =>
+      api<{ log: string[] }>(`/api/projects/${slug}/remove`, {
+        method: 'POST',
+        body: { ...body, confirm: slug },
+      }),
     onSettled: () => client.invalidateQueries({ queryKey: keys.overview }),
   })
 }

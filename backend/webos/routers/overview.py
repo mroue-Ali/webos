@@ -21,7 +21,9 @@ async def overview(
     request: Request, user: User = Depends(require_user), db: Session = Depends(get_db)
 ) -> OverviewOut:
     ctx = get_context(request)
-    return await build_overview(ctx.docker, db, self_project=ctx.settings.self_project)
+    return await build_overview(
+        ctx.docker, db, self_project=ctx.settings.self_project, busy=ctx.deployer.busy
+    )
 
 
 @router.get("/events")

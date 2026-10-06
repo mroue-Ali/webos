@@ -5,7 +5,9 @@ from typing import cast
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.requests import HTTPConnection
 
+from webos.agent_client import Agent
 from webos.config import Settings
+from webos.deployer import Deployer
 from webos.docker_api import DockerClient
 from webos.metrics import ServerMetrics
 from webos.security.sessions import SessionCodec
@@ -24,6 +26,8 @@ class AppContext:
     secrets: SecretBox
     throttle: LoginThrottle
     metrics: ServerMetrics
+    agent: Agent
+    deployer: Deployer
     clock: Callable[[], float]
 
     @property

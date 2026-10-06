@@ -22,6 +22,11 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy
       - run: uv run pytest
+      - name: host agent
+        run: |
+          uv run ruff check ../agent
+          uv run ruff format --check ../agent
+          uv run pytest ../agent
 
   frontend:
     runs-on: ubuntu-latest

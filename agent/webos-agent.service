@@ -1,0 +1,41 @@
+# webos-agent: the webos panel's host helper. Installed by agent/install.sh, which fills
+# in @APPS_ROOT@ and @HOME@.
+[Unit]
+Description=webos host agent (deploys sites for the webos panel)
+After=network-online.target docker.service nginx.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/webos-agent/webos_agent.py serve
+Restart=on-failure
+RestartSec=3
+RuntimeDirectory=webos-agent
+RuntimeDirectoryMode=0755
+# Keep the folder across restarts: the panel container bind-mounts it.
+RuntimeDirectoryPreserve=yes
+
+# The filesystem is read-only except what deploying a site needs.
+ProtectSystem=strict
+ReadWritePaths=/etc/nginx /etc/letsencrypt /var/lib/letsencrypt /var/log/letsencrypt
+ReadWritePaths=-/var/log/nginx -/var/lib/nginx -/run/docker.sock
+ReadWritePaths=@APPS_ROOT@ -@HOME@/.docker
+PrivateTmp=yes
+
+# Never SSH: neither the server's SSH config nor anyone's keys are visible to it.
+InaccessiblePaths=-/etc/ssh -/root/.ssh -@HOME@/.ssh
+# No systemd or D-Bus: nginx is reloaded with a signal, and nothing else gets restarted.
+InaccessiblePaths=-/run/dbus/system_bus_socket -/run/systemd/private
+
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
