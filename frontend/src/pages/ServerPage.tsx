@@ -35,9 +35,8 @@ export function ServerPage() {
     <>
       <div className="page-head">
         <div>
-          <h1>Server</h1>
+          {host.hostname && <div className="page-title strong">{host.hostname}</div>}
           <div className="meta muted small">
-            {host.hostname && <span className="strong">{host.hostname}</span>}
             {host.os && <span>{host.os}</span>}
             {host.kernel && <span>kernel {host.kernel}</span>}
             {host.cpus && <span>{host.cpus} CPUs</span>}

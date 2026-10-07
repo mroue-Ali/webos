@@ -24,13 +24,11 @@ export function ContainerTable({
   containers,
   onAction,
   onLogs,
-  selectedId,
   usage,
 }: {
   containers: Container[]
   onAction?: (container: Container, action: Action) => void
   onLogs?: (container: Container) => void
-  selectedId?: string
   /** Live CPU/memory by container id; adds those columns when given. */
   usage?: Map<string, ContainerUsage>
 }) {
@@ -54,7 +52,7 @@ export function ContainerTable({
         </thead>
         <tbody>
           {containers.map((c) => (
-            <tr key={c.id} className={c.id === selectedId ? 'selected' : undefined}>
+            <tr key={c.id}>
               <td>
                 <div className="strong">{c.name}</div>
                 <div className="muted small mono">{c.image}</div>

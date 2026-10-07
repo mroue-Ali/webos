@@ -1,13 +1,7 @@
-import { Link, Route, Routes } from 'react-router'
 import { ApiError } from './api/client'
 import { useMe } from './api/queries'
-import { Layout } from './components/Layout'
-import { AuditPage } from './pages/AuditPage'
-import { DashboardPage } from './pages/DashboardPage'
-import { LoginPage } from './pages/LoginPage'
-import { NewSitePage } from './pages/NewSitePage'
-import { ProjectPage } from './pages/ProjectPage'
-import { ServerPage } from './pages/ServerPage'
+import { Desktop } from './desktop/Desktop'
+import { LockClock, LoginPage } from './pages/LoginPage'
 
 export default function App() {
   const me = useMe()
@@ -17,9 +11,10 @@ export default function App() {
     if (me.error instanceof ApiError && me.error.status === 401) return <LoginPage />
     return (
       <div className="login">
-        <div className="card login-card">
+        <LockClock />
+        <div className="login-card">
           <p className="error-text">Can't reach webos: {me.error.message}</p>
-          <button type="button" className="btn" onClick={() => me.refetch()}>
+          <button type="button" className="btn primary" onClick={() => me.refetch()}>
             Try again
           </button>
         </div>
@@ -27,23 +22,5 @@ export default function App() {
     )
   }
 
-  return (
-    <Layout username={me.data.username}>
-      <Routes>
-        <Route path="/" element={<DashboardPage />} />
-        <Route path="/server" element={<ServerPage />} />
-        <Route path="/new" element={<NewSitePage />} />
-        <Route path="/projects/:slug" element={<ProjectPage />} />
-        <Route path="/audit" element={<AuditPage />} />
-        <Route
-          path="*"
-          element={
-            <p>
-              Not found. <Link to="/">Back to the dashboard</Link>
-            </p>
-          }
-        />
-      </Routes>
-    </Layout>
-  )
+  return <Desktop username={me.data.username} />
 }

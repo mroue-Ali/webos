@@ -8,7 +8,8 @@ keep it clean and documented. The design, threat model and milestones are in
 - `backend/`: FastAPI app (package `webos`), SQLite via SQLAlchemy 2 + Alembic
   (migrations in `webos/migrations`), managed with uv. Admin CLI: `webos-admin`.
 - `frontend/`: React + TypeScript + Vite. Built into the image and served by the backend
-  (same origin, no CORS).
+  (same origin, no CORS). `src/desktop/` is the shell (window manager, dock, widgets);
+  each page in `src/pages/` is a window, and every window has a URL (`desktop/apps.ts`).
 - `agent/`: `webos-agent`, the root host helper that deploys sites (stdlib-only Python,
   systemd sandbox, installed by `agent/install.sh`). Tests: `cd backend && uv run pytest ../agent`.
 - `docker-compose.yml`: the panel plus a filtering Docker socket proxy.
@@ -39,6 +40,8 @@ keep it clean and documented. The design, threat model and milestones are in
   is read from Docker every time. Project secrets never reach the database, the logs or
   API responses (`inspect` strips `Config.Env`).
 - `frontend/src/api/types.ts` mirrors `backend/webos/schemas.py`.
+- The browser stores only the window layout and the theme (`localStorage`), never project
+  data. Validate whatever is read back from it.
 - Log text is attacker-controlled: render it as text through `lib/ansi.ts`, never with
   `dangerouslySetInnerHTML`.
 - Pydantic patterns run on Rust regex, which has no look-around.

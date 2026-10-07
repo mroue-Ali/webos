@@ -1,19 +1,20 @@
 import { useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
 import { useOverview, useServer, useUnregisterProject, useUpdateProject } from '../api/queries'
 import type { Project } from '../api/types'
 import { ConfirmDialog, type ConfirmRequest } from '../components/ConfirmDialog'
 import { ContainerTable } from '../components/ContainerTable'
-import { LogViewer } from '../components/LogViewer'
+import { Icon } from '../components/Icon'
 import { SitePanel } from '../components/SitePanel'
+import { useDesktop, useWindow } from '../desktop/state'
+import { projectStatus } from '../lib/status'
 import { useContainerActions } from '../lib/useContainerActions'
 
-export function ProjectPage() {
-  const { slug } = useParams()
+export function ProjectPage({ slug }: { slug: string }) {
   const overview = useOverview()
   const server = useServer()
+  const desktop = useDesktop()
+  const win = useWindow()
   const actions = useContainerActions()
-  const [selected, setSelected] = useState<string | null>(null)
   const usage = new Map((server.data?.containers ?? []).map((u) => [u.id, u]))
 
   if (overview.isPending) return <p className="muted">Loading…</p>
@@ -23,23 +24,26 @@ export function ProjectPage() {
   if (!project) {
     return (
       <p>
-        No project named <code>{slug}</code>. <Link to="/">Back to the dashboard</Link>
+        No project named <code>{slug}</code>. It may have been removed.{' '}
+        <button type="button" className="btn small" onClick={win?.close}>
+          Close
+        </button>
       </p>
     )
   }
 
-  const logContainer =
-    project.containers.find((c) => c.id === selected) ?? project.containers[0] ?? null
   const anyRunning = project.containers.some((c) => c.state === 'running')
+  const status = projectStatus(project)
 
   return (
     <>
       <div className="page-head">
         <div>
-          <Link to="/" className="muted small">
-            ← Dashboard
-          </Link>
-          <h1>{project.display_name}</h1>
+          <div className="page-title">
+            <span className={`status-dot ${status.tone}`} aria-hidden />
+            <span className="strong">{project.display_name}</span>
+            <span className={`pill ${status.tone}`}>{status.label}</span>
+          </div>
           <div className="meta muted small">
             <span>
               compose project <code>{project.compose_project}</code>
@@ -48,7 +52,8 @@ export function ProjectPage() {
             {project.port && <code>127.0.0.1:{project.port}</code>}
             {project.domain && (
               <a href={`https://${project.domain}`} target="_blank" rel="noreferrer noopener">
-                {project.domain} ↗
+                {project.domain}
+                <Icon name="external" size={12} />
               </a>
             )}
           </div>
@@ -94,15 +99,12 @@ export function ProjectPage() {
         <ContainerTable
           containers={project.containers}
           onAction={actions.container}
-          onLogs={(c) => setSelected(c.id)}
-          selectedId={logContainer?.id}
+          onLogs={(c) => desktop.open({ app: 'logs', slug: project.slug, container: c.name })}
           usage={usage}
         />
       </div>
 
       {project.managed && <SitePanel project={project} />}
-
-      {logContainer && <LogViewer key={logContainer.id} container={logContainer} />}
 
       <ProjectSettings key={project.slug} project={project} />
       <ConfirmDialog request={actions.confirm} onClose={actions.clearConfirm} />
@@ -113,7 +115,7 @@ export function ProjectPage() {
 function ProjectSettings({ project }: { project: Project }) {
   const update = useUpdateProject(project.slug)
   const unregister = useUnregisterProject()
-  const navigate = useNavigate()
+  const win = useWindow()
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
   const [form, setForm] = useState({
     display_name: project.display_name,
@@ -188,12 +190,12 @@ function ProjectSettings({ project }: { project: Project }) {
           onClick={() =>
             setConfirm({
               title: `Unregister ${project.slug}?`,
-              body: <p>It moves to “Not registered” on the dashboard. Nothing on the server changes.</p>,
+              body: <p>It moves to “Not registered” in Projects. Nothing on the server changes.</p>,
               confirmLabel: 'Unregister',
               danger: true,
               onConfirm: async () => {
                 await unregister.mutateAsync(project.slug)
-                navigate('/')
+                win?.close()
               },
             })
           }

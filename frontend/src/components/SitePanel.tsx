@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useNavigate } from 'react-router'
 import {
   useDeployments,
   useDiscardDraft,
@@ -10,6 +9,8 @@ import {
   useUpdateSite,
 } from '../api/queries'
 import type { Project } from '../api/types'
+import { AppLink } from '../desktop/AppLink'
+import { useWindow } from '../desktop/state'
 import { formatDateTime } from '../lib/format'
 import { ConfirmDialog, type ConfirmRequest } from './ConfirmDialog'
 import { DeployLog, DeployStatusBadge } from './DeployLog'
@@ -31,14 +32,14 @@ export function SitePanel({ project }: { project: Project }) {
 
 function DraftBanner({ project }: { project: Project }) {
   const discard = useDiscardDraft()
-  const navigate = useNavigate()
+  const win = useWindow()
   const [confirm, setConfirm] = useState<ConfirmRequest | null>(null)
   return (
     <div className="banner">
       <span>This site's setup isn't finished: it hasn't been deployed yet.</span>
-      <Link className="btn primary small" to={`/new?site=${project.slug}`}>
+      <AppLink className="btn primary small" to={{ app: 'new', site: project.slug }}>
         Continue setup
-      </Link>
+      </AppLink>
       <button
         type="button"
         className="btn small danger"
@@ -50,7 +51,7 @@ function DraftBanner({ project }: { project: Project }) {
             danger: true,
             onConfirm: async () => {
               await discard.mutateAsync(project.slug)
-              navigate('/')
+              win?.close()
             },
           })
         }
@@ -284,7 +285,7 @@ function RemoveCard({ project }: { project: Project }) {
 function RemoveDialog({ project, onClose }: { project: Project; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null)
   const remove = useRemoveSite(project.slug)
-  const navigate = useNavigate()
+  const win = useWindow()
   const [typed, setTyped] = useState('')
   const [deleteVolumes, setDeleteVolumes] = useState(false)
   const [deleteFiles, setDeleteFiles] = useState(false)
@@ -333,7 +334,7 @@ function RemoveDialog({ project, onClose }: { project: Project; onClose: () => v
           onClick={() =>
             remove.mutate(
               { delete_files: deleteFiles, delete_volumes: deleteVolumes, code: code || undefined },
-              { onSuccess: () => navigate('/') },
+              { onSuccess: () => win?.close() },
             )
           }
         >

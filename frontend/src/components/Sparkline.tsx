@@ -1,5 +1,6 @@
 import { useState, type PointerEvent } from 'react'
 import { formatTime } from '../lib/format'
+import { linePath } from '../lib/spark'
 
 export interface SparkSeries {
   label: string
@@ -10,24 +11,8 @@ export interface SparkSeries {
 
 const W = 300
 const H = 56
-const PAD = 3
 
-function path(values: (number | null)[], max: number): string {
-  const step = values.length > 1 ? W / (values.length - 1) : 0
-  let d = ''
-  let pen = false
-  values.forEach((v, i) => {
-    if (v === null) {
-      pen = false // a gap, not a drop to zero
-      return
-    }
-    const x = i * step
-    const y = H - PAD - (Math.min(v, max) / max) * (H - 2 * PAD)
-    d += `${pen ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`
-    pen = true
-  })
-  return d
-}
+const path = (values: (number | null)[], max: number) => linePath(values, max, W, H)
 
 /**
  * A small trend line with a hover readout. One series: soft area fill. Two series: the

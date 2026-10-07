@@ -1,5 +1,17 @@
 import { useState, type FormEvent } from 'react'
 import { useLogin } from '../api/queries'
+import { clockDate, clockTime, useNow } from '../lib/useNow'
+
+/** The big clock over the sign-in card, like a lock screen. */
+export function LockClock() {
+  const now = useNow()
+  return (
+    <div className="lock-clock" aria-hidden>
+      <div className="lock-time">{clockTime(now)}</div>
+      <div className="lock-date">{clockDate(now)}</div>
+    </div>
+  )
+}
 
 export function LoginPage() {
   const login = useLogin()
@@ -22,10 +34,11 @@ export function LoginPage() {
 
   return (
     <div className="login">
-      <form className="card login-card" onSubmit={submit}>
-        <div className="brand login-brand">
-          <img src="/favicon.svg" alt="" width={28} height={28} />
-          webos
+      <LockClock />
+      <form className="login-card" onSubmit={submit}>
+        <div className="login-brand">
+          <img src="/favicon.svg" alt="" width={44} height={44} />
+          <span>webos</span>
         </div>
         <label>
           Username

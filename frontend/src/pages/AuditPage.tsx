@@ -31,7 +31,10 @@ export function AuditPage() {
   return (
     <>
       <div className="page-head">
-        <h1>Audit log</h1>
+        <p className="muted small page-intro">
+          Every sign-in attempt and every change, newest first. Actions write a “started” row and
+          then an “ok” or “error” row. Rows can't be edited or deleted.
+        </p>
         <div className="row-actions">
           <select value={action} onChange={(e) => setAction(e.target.value)} aria-label="Action">
             {ACTIONS.map(([value, label]) => (
@@ -49,10 +52,6 @@ export function AuditPage() {
           />
         </div>
       </div>
-      <p className="muted small">
-        Every sign-in attempt and every change, newest first. Actions write a “started” row and
-        then an “ok” or “error” row. Rows can't be edited or deleted.
-      </p>
 
       <div className="card">
         {audit.isError && <p className="error-text pad">{audit.error.message}</p>}

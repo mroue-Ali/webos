@@ -20,7 +20,11 @@ the browser, with every change written to an audit log.
 - **Server page:** CPU, memory, swap, load, disk, and network in/out with 30-minute
   trend lines; how much disk Docker's images, volumes and build cache take; each running
   container's CPU, memory and traffic.
-- **Dashboard:** every compose project and container on the host, with state, health,
+- **A desktop in the browser:** pages open as windows you can move, resize, minimise and
+  snap to a screen edge, with a dock, an app launcher, Ctrl+K search, notifications for
+  anything that needs attention, live widgets (clock, CPU, memory, network, disk) and light
+  and dark themes. On a phone, windows open full screen.
+- **Projects:** every compose project and container on the host, with state, health,
   restarts, exit codes and published ports. Updates live from Docker events.
 - **Warnings:** crash loops, failing health checks, OOM kills, and **ports published on
   `0.0.0.0`**. Docker writes its own iptables rules, so those ports bypass ufw.

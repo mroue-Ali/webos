@@ -367,6 +367,36 @@ disk usage and each running container's CPU, memory and traffic.
 Later (milestone 2, through the host agent): cleanup actions such as pruning unused
 images and build cache.
 
+## 10c. Desktop UI (added 2026-10-07, before milestone 2 was tried on the server)
+
+The interface is a small desktop instead of a page with a top bar. It's a change to the
+frontend only: the API, the security model and the CSP are unchanged.
+
+- **Windows instead of pages.** Projects, Server, New site, Audit log, each project and
+  each project's logs open as windows you can move, resize, minimise, maximise
+  (double-click the title bar) and snap to the top or a side edge. The desktop shows an
+  icon per app and per registered project, with the project's status as a dot.
+- **A dock** at the bottom holds the launcher (apps, projects, log out), the open windows,
+  live CPU and memory, notifications, Ctrl+K search, the theme switch, full screen and the
+  clock. **Widgets** beside the windows show the clock, CPU and memory, network, disk and
+  Docker counts, all from the existing `/api/server` and `/api/overview`.
+- **Notifications** are derived, not stored: container warnings, deploys in progress and
+  drafts whose setup isn't finished, read from the overview like everything else.
+- **Every window has a URL** (`/projects`, `/projects/<slug>`, `/projects/<slug>/logs`,
+  `/server`, `/audit`, `/new?site=<slug>`). The address bar follows the window in front,
+  so a reload or a shared link opens the same window. react-router is gone: the window
+  manager (`frontend/src/desktop/`) is the router.
+- **The browser remembers the layout** (which windows are open and where) and the theme
+  in `localStorage`. That's a per-browser convenience holding no project data. Anything
+  read back is validated, the same way the server validates slugs.
+- **Log streams pause while their window is minimised.** Over HTTP/1.1 a browser opens at
+  most six connections per site, and every live log is one, so hidden windows give theirs
+  back. Opening the window again starts a fresh tail.
+- **Phones** get a home screen (icons, then widgets), full-screen windows and a
+  full-width dock.
+- No new dependencies. The icons are drawn for webos as inline SVG, and window geometry
+  is set through the CSSOM, which `style-src 'self'` allows.
+
 ## 11. Server setup for milestone 1
 
 You run these; I'll give them one at a time when we get there. Here they are in order:

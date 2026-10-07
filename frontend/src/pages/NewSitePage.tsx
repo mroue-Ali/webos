@@ -1,5 +1,4 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router'
 import {
   useAgent,
   useCheckDomain,
@@ -14,6 +13,8 @@ import {
 import type { ComposeService, Deployment, ServiceChoice, SiteConfig } from '../api/types'
 import { ConfirmDialog, type ConfirmRequest } from '../components/ConfirmDialog'
 import { DeployLog } from '../components/DeployLog'
+import { AppLink } from '../desktop/AppLink'
+import { useWindow } from '../desktop/state'
 
 type Step = 'repo' | 'app' | 'domain' | 'env' | 'review' | 'deploy'
 
@@ -63,10 +64,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-export function NewSitePage() {
-  const [params] = useSearchParams()
-  const resume = params.get('site')
-  const navigate = useNavigate()
+/** The new-site wizard. `site` resumes a draft whose setup wasn't finished. */
+export function NewSitePage({ site }: { site?: string }) {
+  const resume = site ?? null
+  const win = useWindow()
   const agent = useAgent()
 
   const [step, setStep] = useState<Step>(resume ? 'app' : 'repo')
@@ -133,7 +134,7 @@ export function NewSitePage() {
       danger: true,
       onConfirm: async () => {
         await discard.mutateAsync(slug)
-        navigate('/')
+        win?.close()
       },
     })
   }
@@ -146,10 +147,7 @@ export function NewSitePage() {
     <>
       <div className="page-head">
         <div>
-          <Link to="/" className="muted small">
-            ← Dashboard
-          </Link>
-          <h1>New site{slug ? `: ${slug}` : ''}</h1>
+          <div className="page-title strong">{slug ?? 'Deploy a repository'}</div>
           {repoLabel && <div className="muted small mono">{repoLabel}</div>}
         </div>
         {slug && step !== 'deploy' && (
@@ -161,8 +159,10 @@ export function NewSitePage() {
 
       {agentDown && (
         <div className="banner bad" role="alert">
-          The host helper (webos-agent) isn't reachable: {agent.data?.error}. Install it on the
-          server once with <code>sudo sh agent/install.sh</code> (see the README).
+          <span>
+            The host helper (webos-agent) isn't reachable: {agent.data?.error}. Install it on the
+            server once with <code>sudo sh agent/install.sh</code> (see the README).
+          </span>
         </div>
       )}
 
@@ -301,9 +301,11 @@ export function NewSitePage() {
               <a className="btn primary small" href={`https://${domain}`} target="_blank" rel="noreferrer noopener">
                 Open {domain} ↗
               </a>
-              <Link className="btn small" to={`/projects/${slug}`}>
-                Project page
-              </Link>
+              {slug && (
+                <AppLink className="btn small" to={{ app: 'project', slug }}>
+                  Project page
+                </AppLink>
+              )}
             </div>
           )}
           {outcome?.status === 'failed' && (
