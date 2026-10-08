@@ -133,6 +133,38 @@ run the install command again after `git pull`.
 **Back up `data/webos.db`.** It holds projects and the audit log. Live state is always
 read from Docker, so losing it loses no server state.
 
+### Updating
+
+On the server, in the checkout:
+
+```bash
+sh deploy/deploy.sh
+```
+
+It fast-forwards to the latest commit on `master`, rebuilds, and waits until the panel
+reports healthy. If `agent/` changed, it tells you to also run `sudo sh agent/install.sh`.
+
+### Deploy on push (optional)
+
+CI can run that same script after every push to `master` that passes all its checks. The
+SSH key it uses can run `deploy/deploy.sh` and nothing else: no shell, no forwarding, and
+only for a commit that's already on `master`.
+
+1. Make a key pair (anywhere, no passphrase):
+   `ssh-keygen -t ed25519 -N "" -C github-actions-webos -f webos-deploy`
+2. On the server, in the checkout, authorize the public half (the three parts of
+   `webos-deploy.pub`):
+   `sh deploy/authorize-deploy-key.sh ssh-ed25519 AAAA... github-actions-webos`
+3. Add the repository secrets (Settings, then Secrets and variables, then Actions):
+   `SSH_HOST`, `SSH_USER`, `SSH_KEY` (the private key file), `SSH_KNOWN_HOSTS` (the
+   server's lines from a `known_hosts` you already trust: `ssh-keygen -F your-server`),
+   and `SSH_PORT` if SSH isn't on 22. Then delete the private key file.
+
+Each push then deploys once CI is green, and **Run workflow** on the CI workflow deploys by
+hand. A deploy restarts the panel, so a site deployment running at that moment is cut off
+and has to be started again. Anyone who can push to `master` can now change the server, so
+protect that branch and your GitHub account accordingly.
+
 ## Configuration
 
 All settings are environment variables, set in `.env` (see [.env.example](.env.example)).

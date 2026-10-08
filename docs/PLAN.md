@@ -416,6 +416,24 @@ The panel itself isn't push-to-deployed, at least at first. A compromised GitHub
 would mean code running as the panel, so updates go through SSH: `git pull && docker
 compose up -d --build`.
 
+**Decision (2026-10-09): optional push-to-deploy.** Another site on the same server
+already deploys on push, so whoever controls the GitHub account can already reach root
+through a compose file. Deploying webos the same way adds no new way in. What it gives up
+is the pause between a push and a manual pull. The setup keeps the rest tight:
+
+- The deploy job runs only after every CI job passes on `master`, and it sends nothing but
+  the commit hash.
+- The server-side key is a forced command (`restrict`) that can only run
+  `deploy/deploy.sh`. The script accepts only a full hash already on `origin/master` and
+  only fast-forwards, so a leaked key can't move the server backwards, onto a branch, or
+  run anything else.
+- The script waits for the container's health check and fails the run if the panel
+  doesn't come back. It never reinstalls the root agent; when `agent/` changes it says so
+  and that stays manual.
+- A deploy restarts the panel, so a site deployment running at that moment is marked
+  interrupted at startup (`Deployer.mark_interrupted`) and has to be started again.
+- Without the secrets (forks, or before setup) the job does nothing and passes.
+
 ---
 
 ## 12. Later milestones (outline)

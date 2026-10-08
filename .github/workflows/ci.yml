@@ -4,6 +4,7 @@ on:
   push:
     branches: [master]
   pull_request:
+  workflow_dispatch: # run the checks, and deploy, by hand
 
 permissions:
   contents: read
@@ -51,3 +52,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t webos:ci .
+
+  # Push-to-deploy: once every check passes on master, the server runs deploy/deploy.sh for
+  # this commit. The SSH key can run that script and nothing else (README, "Deploy on
+  # push"). Without the secrets (a fork, or before setup) the job says so and passes.
+  deploy:
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    needs: [backend, frontend, image]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
+    steps:
+      - name: Deploy over SSH
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          if [ -z "$SSH_KEY" ]; then
+            echo "::notice::No deploy secrets, so nothing was deployed."
+            exit 0
+          fi
+          install -d -m 700 ~/.ssh
+          (umask 077 && printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key)
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The forced command on the server ignores everything but this commit hash.
+          ssh -i ~/.ssh/deploy_key -p "${SSH_PORT:-22}" \
+            -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            -o ServerAliveInterval=30 \
+            "$SSH_USER@$SSH_HOST" "$GITHUB_SHA"
